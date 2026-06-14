@@ -6,7 +6,7 @@
   - 観測可能な完了状態: `uv run apivista-backend-analysis --help`がエラーなく実行され、使用方法が表示される
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 1.2 出力モデル・schemaVersion・ID採番ヘルパーを定義する
+- [x] 1.2 出力モデル・schemaVersion・ID採番ヘルパーを定義する
   - `AnalysisOutput`, `RouteDefinition`, `SchemaReference`(`role: Literal["request","response"]`含む), `FunctionNode`, `FileNode`, `Warning`, `SourceLocation`を`extra="forbid"`で定義し、`schemaVersion=1`を設定する
   - 関数ID(`<module-dotted-path>:<qualname>`)・ファイルID(`backend_root`相対POSIXパス)を導出する採番ヘルパーを実装する
   - 観測可能な完了状態: `AnalysisOutput`の`model_json_schema()`が妥当なJSON Schemaを返し、同一入力に対して採番ヘルパーが決定的に同じIDを返すことを単体テストで確認できる
