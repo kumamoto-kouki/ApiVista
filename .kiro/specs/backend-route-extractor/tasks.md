@@ -12,7 +12,7 @@
   - 観測可能な完了状態: `AnalysisOutput`の`model_json_schema()`が妥当なJSON Schemaを返し、同一入力に対して採番ヘルパーが決定的に同じIDを返すことを単体テストで確認できる
   - _Requirements: 4.1, 4.2, 4.3, 2.1, 2.2_
 
-- [ ] 1.3 エラー・警告コレクターを実装する
+- [x] 1.3 エラー・警告コレクターを実装する
   - 構文エラー(`ParserSyntaxError`/`UnicodeDecodeError`)や解析対象外の除外理由を受け取り、`target`/`reason`を持つ`Warning`へ変換するコレクターを実装する
   - 観測可能な完了状態: コレクターに記録したエラー・除外理由が、出力スキーマに沿った`Warning`のリストへ変換されることを単体テストで確認できる
   - _Requirements: 5.1, 5.2, 5.3_
