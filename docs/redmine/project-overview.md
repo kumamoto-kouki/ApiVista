@@ -26,11 +26,13 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 
 ## 技術スタック
 
-- **拡張本体**: TypeScript(VSCode Extension API)、ts-morph
-- **バックエンド解析**: Python(libcst)、AST解析
-- **フロントエンド/フロントエンド解析対象**: Nuxt.js(Vue/TS)
-- **ツール構成**: ESLint / Prettier(TS)、ruff / pytest(Python)、Vitest(テスト)
-- **AI開発支援**: Kiro-style Spec-Driven Development、Serena MCP
+- **拡張本体**: TypeScript(VSCode Extension API)
+- **バックエンド解析**: TypeScript + web-tree-sitter(WASM、Python文法は `@vscode/tree-sitter-wasm`)による FastAPI/Python の AST解析
+- **フロントエンド解析**: TypeScript + ts-morph による Nuxt.js(Vue/TS)の解析
+- **フロントエンド解析対象**: Nuxt.js(Vue/TS)
+- **実行環境**: 全解析は拡張ホスト(Node/Electron)上で動作し、エンドユーザーに Python/uv 等の外部ランタイムを要求しない
+- **ツール構成**: ESLint / Prettier、Vitest(+jsdom)、@vscode/test-electron(テスト)
+- **AI開発支援**: Kiro-style Spec-Driven Development、MCPサーバー群(serena/context7/semgrep)
 
 ## スペック構成(依存関係順)
 
@@ -38,7 +40,7 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 
 | 順序 | スペック名 | 内容 | 依存 |
 | --- | --- | --- | --- |
-| 1 | `backend-route-extractor` | FastAPIのPythonコードをAST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する | なし |
+| 1 | `backend-route-extractor` | FastAPIのPythonコードを TypeScript + web-tree-sitter(WASM)で AST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する | なし |
 | 2 | `frontend-call-extractor` | Nuxt.jsのVue/TSコードを解析し、API呼び出し(URL・method・呼び出し元位置)とコンポーネント/関数単位の呼び出しグラフを抽出する | なし |
 | 3 | `route-linkage-engine` | バックエンド/フロントエンドの抽出結果を受け取り、URLパス静的マッチング+OpenAPIスキーマ照合のハイブリッドでルートとAPI呼び出しを連携付け、3階層のデータモデルを構築する | 1, 2 |
 | 4 | `vscode-extension-ui` | VSCode拡張本体(アクティベーション、ワークスペーススキャン、ファイル監視、コマンド)とWebviewによるグラフ可視化(深度切り替え、ソースジャンプ)を実装する | 3 |
@@ -47,13 +49,13 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 
 ## セットアップ方法
 
-```bash
-# TypeScript側(拡張本体)
-npm install
+本プロジェクトは単一の VSCode 拡張機能(TypeScript)であり、`npm` で完結します。エンドユーザーに Python/uv 等の外部ランタイムは不要です。
 
-# Python側(バックエンド解析ツール)
-uv sync
+```bash
+npm install
 ```
+
+> 注: backend-route-extractor は旧 Python 実装から TypeScript + web-tree-sitter(WASM)へ再実装中で、旧実装の資産が暫定的に残っています(Phase 2 で削除予定)。配布物・エンドユーザー手順には含まれません。
 
 ## 開発の進め方
 

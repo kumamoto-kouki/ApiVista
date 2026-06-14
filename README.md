@@ -37,7 +37,7 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 | サーバー | 用途 |
 | --- | --- |
 | `serena` | セマンティックなコード検索・編集(LSPベース) |
-| `context7` | ライブラリの最新ドキュメント取得(FastAPI/Pydantic/libcst/Nuxt等のバージョン追従) |
+| `context7` | ライブラリの最新ドキュメント取得(FastAPI/Pydantic/tree-sitter/Nuxt等のバージョン追従) |
 | `semgrep` | 静的解析による脆弱性スキャン(OWASP Top10系) |
 
 VSCode拡張のWebview検証はブラウザを使用せず、`@vscode/test-electron`(拡張本体の統合テスト)と`vitest`+`jsdom`(Webview内ロジックの単体テスト)でVSCode上で完結させる方針のため、ブラウザ操作系MCP(Playwright等)は導入していません。
@@ -65,13 +65,13 @@ export CONTEXT7_API_KEY="..."  # context7.com で取得(任意)
 
 ## セットアップ方法
 
-```bash
-# TypeScript側(拡張本体)
-npm install
+本プロジェクトは単一の VSCode 拡張機能(TypeScript)であり、拡張本体・全解析器とも `npm` で完結します。エンドユーザーに Python/uv 等の外部ランタイムは不要です。
 
-# Python側(バックエンド解析ツール)
-uv sync
+```bash
+npm install
 ```
+
+> 注: backend-route-extractor は現在、旧 Python 実装から TypeScript + web-tree-sitter(WASM)へ再実装中です。旧実装の資産がリポジトリに暫定的に残っていますが(Phase 2 で削除予定)、配布物・エンドユーザー手順には含まれません。
 
 ## 開発の進め方
 
