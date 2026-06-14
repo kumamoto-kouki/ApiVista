@@ -23,7 +23,7 @@
   - _Requirements: 1.3, 3.3, 5.1, 6.1_
   - _Boundary: moduleMap_
 
-- [ ] 2.2 ファイル単位のシンボルテーブル(スコープ解決の代替)を実装する
+- [x] 2.2 ファイル単位のシンボルテーブル(スコープ解決の代替)を実装する
   - 各ファイルのトップレベルのimport・クラス定義・関数定義を走査し、名前を「ローカルクラス定義位置」「import由来の完全修飾名」「ビルトイン」「その他」へ解決する表を構築する
   - 観測可能な完了状態: `routers/users.py`で`UserRequest`/`UserResponse`がimport由来として、`routers/items.py`で`ItemResponse`がローカルクラス定義として解決されることを単体テストで確認できる
   - _Requirements: 2.1, 3.1_
