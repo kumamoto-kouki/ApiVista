@@ -54,7 +54,7 @@
   - _Requirements: 3.1_
   - _Boundary: extractors/calls_
 
-- [ ] 2.7 Pass1の各抽出結果を1ファイル1パスの抽出処理へ統合する
+- [x] 2.7 Pass1の各抽出結果を1ファイル1パスの抽出処理へ統合する
   - 2.3-2.6の抽出(ルート候補・router関係・スキーマ参照候補・クラス定義/関数定義レジストリ・呼び出し式)をファイル単位の抽出結果にまとめ、構文エラーのあるファイルはスキップ済みとして警告に記録する
   - 観測可能な完了状態: `sample_app`の全ファイルに対し、構文エラーファイルがスキップ扱いで警告に記録され、他ファイルはファイル単位の抽出結果を返すことを確認できる
   - _Requirements: 1.1, 1.4, 2.1, 3.1, 5.1, 5.2, 5.3_
@@ -135,3 +135,4 @@
 - `tests/fixtures/sample_app/**` は解析INPUT(Pythonソース)であり、旧Python実装を撤去(5.3)してもテスト入力として温存する。
 - (task 1.1で確認)依存の実証済み組み合わせ: `web-tree-sitter@0.25.10` + `tree-sitter-wasms@0.1.13`(`out/tree-sitter-python.wasm`)はABI整合し、`broken.py`が`rootNode.hasError=true`になることも確認済み。ランタイムWASMは`web-tree-sitter/tree-sitter.wasm`、文法は`tree-sitter-wasms/out/tree-sitter-python.wasm`をnode_modulesから解決(`parser.ts`の`getPythonParser(wasmDir?)`)。
 - (task 1.1で確認)tsconfigはTS6+Node16で`@types/node`が自動適用されず、`compilerOptions.types: ["node"]`の明示が必要(`import.meta.url`/`node:*`解決のため)。テストファイルは`tsc`ビルドから除外し、型・実行はvitestが担う。
+- (task 2.7で確認)`extractFile`の実装シグネチャは `extractFile(fileId, tree, collector)` の**3引数**(design.mdの4引数 `(…, map: ModuleMap, collector)` から map を省略)。Pass1抽出器はいずれもModuleMapを使わない(file-local、schemasは自前symbolTableを構築)ため。**ModuleMapはPass2(3.x/4.x)で別途スレッドする**こと。Pass1各抽出器のAPI: `extractRoutes(tree,fileId,collector)` / `extractRouterRelations(tree,fileId)` / `extractSchemaInfo(tree,fileId)→{refCandidates,classDefinitions}` / `extractCalls(tree,fileId)→{callExpressions,functionDefinitions}`。
