@@ -8,7 +8,7 @@
   - _Requirements: 6.2, 6.4_
   - _Boundary: parser_
 
-- [ ] 1.2 出力データモデル・schemaVersion・ID/qualname/位置/警告の共有ユーティリティを定義する
+- [x] 1.2 出力データモデル・schemaVersion・ID/qualname/位置/警告の共有ユーティリティを定義する
   - 出力モデル(ルート定義・スキーマ参照・関数ノード・ファイルノード・警告・ソース位置)と`schemaVersion=1`を型安全に定義する
   - 関数ID(`<module-dotted-path>:<qualname>`)・ファイルID(backend_root相対POSIXパス)の採番、qualname構築(祖先のクラス/関数を`.`連結)、行番号(0基底→1基底へ+1)、文字列リテラルのクオート除去、警告コレクターを提供する
   - 観測可能な完了状態: 同一入力に対し採番・qualname・位置ヘルパが決定的に同じ結果を返すこと、警告が出力スキーマ準拠の形へ変換されることを単体テストで確認できる
