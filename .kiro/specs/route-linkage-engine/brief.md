@@ -49,3 +49,7 @@ backend-route-extractor の出力(ルート定義・OpenAPIスキーマ参照・
 - 入力データスキーマは backend-route-extractor / frontend-call-extractor の出力に依存するため、両スペックとの整合性を保つ必要がある
 - 出力データスキーマは vscode-extension-ui の3階層表示(深度切り替え)要件を満たす設計とする
 - マッチングはハイブリッド(静的パスマッチング + OpenAPI照合)方式を前提とする
+- 実装は TypeScript で行い、拡張ホスト(Node/Electron)上で動作させる(外部ランタイム不要)
+
+## Design Phase Note
+- 本スペックも VSCode-native 方針に従う: TypeScript/Node ネイティブで実装し、検証は `vitest` による単体テストで行う。ブラウザE2E(Playwright等)・WASI実行ランタイム(`@vscode/wasm-wasi`)は使用しない。プロジェクト全体方針は [tech.md](../../steering/tech.md) を参照
