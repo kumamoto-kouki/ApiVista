@@ -62,7 +62,7 @@
   - _Boundary: extractFile_
 
 - [ ] 3. コア: クロスファイル解決(Pass2a/2b/2c)
-- [ ] 3.1 (P) `FastAPI()`起点のルートパス解決を実装する
+- [x] 3.1 (P) `FastAPI()`起点のルートパス解決を実装する
   - router関係グラフから`FastAPI()`インスタンスをBFS起点として一意に特定し(0件/2件以上は警告として全ルート未確定扱い)、include_routerのprefixを連結して完全URLパスを算出する。循環は検出し無限ループしない。確定ルートには採番ヘルパで起点関数IDを設定する
   - 観測可能な完了状態: `sample_app`でprefixチェーンに基づく完全パス(`/api/items/{item_id}`・`/users`等)を持つルート定義が生成され、確定できないルートは警告付きで除外されることを確認できる
   - _Requirements: 1.2, 1.3, 5.2, 5.3_
@@ -136,3 +136,5 @@
 - (task 1.1で確認)依存の実証済み組み合わせ: `web-tree-sitter@0.25.10` + `tree-sitter-wasms@0.1.13`(`out/tree-sitter-python.wasm`)はABI整合し、`broken.py`が`rootNode.hasError=true`になることも確認済み。ランタイムWASMは`web-tree-sitter/tree-sitter.wasm`、文法は`tree-sitter-wasms/out/tree-sitter-python.wasm`をnode_modulesから解決(`parser.ts`の`getPythonParser(wasmDir?)`)。
 - (task 1.1で確認)tsconfigはTS6+Node16で`@types/node`が自動適用されず、`compilerOptions.types: ["node"]`の明示が必要(`import.meta.url`/`node:*`解決のため)。テストファイルは`tsc`ビルドから除外し、型・実行はvitestが担う。
 - (task 2.7で確認)`extractFile`の実装シグネチャは `extractFile(fileId, tree, collector)` の**3引数**(design.mdの4引数 `(…, map: ModuleMap, collector)` から map を省略)。Pass1抽出器はいずれもModuleMapを使わない(file-local、schemasは自前symbolTableを構築)ため。**ModuleMapはPass2(3.x/4.x)で別途スレッドする**こと。Pass1各抽出器のAPI: `extractRoutes(tree,fileId,collector)` / `extractRouterRelations(tree,fileId)` / `extractSchemaInfo(tree,fileId)→{refCandidates,classDefinitions}` / `extractCalls(tree,fileId)→{callExpressions,functionDefinitions}`。
+- (task 3.1で確認・Pass2共通)相対import解決の共有ユーティリティ `src/backend-analysis/resolver/imports.ts` を新設(`resolveRelativeModule(dotted,currentModule)` / `resolveImportQualifiedName(qualifiedName,currentFileId,map)→{moduleDotted,name,targetFileId}`)。3.2/3.3 はこれを再利用すること。
+- (task 3.1で確認)`resolveRoutePaths(perFile, map, collector, symbolTables)` は**第4引数 `symbolTables: Map<fileId, Map<string,Binding>>`** を取る(routerExpr の先頭識別子を import 解決するため。FileExtractionResult は tree/symbolTable を持たない)。**task 4.2 の orchestration で各ファイルの `buildSymbolTable(tree, fileId)` を perFile と同時に構築して渡す**こと。3.2(callGraph)も callee の import 解決に symbolTable が必要になる見込み。
