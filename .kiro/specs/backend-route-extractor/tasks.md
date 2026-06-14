@@ -35,7 +35,7 @@
   - _Requirements: 1.1, 1.4, 5.2, 5.3_
   - _Boundary: Route and Schema Extractor(ルートデコレータ抽出)_
 
-- [ ] 3.2 (P) router関係と`FastAPI()`インスタンスの抽出を実装する
+- [x] 3.2 (P) router関係と`FastAPI()`インスタンスの抽出を実装する
   - `APIRouter(prefix=...)`定義、`include_router(prefix=...)`呼び出し、および`FastAPI()`/`FastAPI(...)`インスタンス生成を抽出し、`FastAPI()`インスタンスをパス解決のBFS起点候補としてマークする
   - 観測可能な完了状態: `sample_app`に対して実行すると、`FastAPI()`インスタンスが起点候補として識別され、`include_router`のprefix関係を含む関係グラフが構築されることを確認できる
   - _Requirements: 1.2, 1.3_
