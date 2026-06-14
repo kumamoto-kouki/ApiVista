@@ -49,3 +49,9 @@ TypeScript/Vue SFCの静的解析(ASTベース)により、`$fetch`/`useFetch`/a
 - 対象は `frontend/` ディレクトリ配下のNuxt.js(Vue3)コードを前提とする
 - 静的解析のみで、対象プロジェクトの実行・依存パッケージのインストールは不要であることが望ましい
 - 出力データスキーマは backend-route-extractor の出力と対称的に設計し、route-linkage-engine と vscode-extension-ui(3階層表示)双方の要件を満たすこと
+
+## Design Phase Note
+- WebAssembly(`@vscode/wasm-wasi`)化は再検討の上、不採用とする
+  - 理由1: `@vscode/wasm-wasi`(WASI based WebAssembly Execution Engine)は現時点でもexperimental/pre-releaseであり、Web版VSCode拡張での有効化に既知の問題が報告されている。VSCode公式ブログでもproduction向け拡張での使用は推奨されていない
+  - 理由2: 本解析処理はts-morph(Node.jsライブラリ)ベースであり、VSCode拡張ホスト(Node.js/Electron)上でネイティブに動作する。追加構成なしに「VSCode上で完結」という目標を既に満たしているため、WASM化のメリットは薄い
+  - vscode.dev等のWeb版VSCode拡張対応が将来的にスコープに入った場合のみ、`@vscode/wasm-wasi`の成熟度を再確認の上で再検討する

@@ -36,8 +36,9 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 | --- | --- |
 | `serena` | セマンティックなコード検索・編集(LSPベース) |
 | `context7` | ライブラリの最新ドキュメント取得(FastAPI/Pydantic/libcst/Nuxt等のバージョン追従) |
-| `playwright` | ブラウザ操作・E2Eテスト自動化(Webview/フロントエンド検証) |
 | `semgrep` | 静的解析による脆弱性スキャン(OWASP Top10系) |
+
+VSCode拡張のWebview検証はブラウザを使用せず、`@vscode/test-electron`(拡張本体の統合テスト)と`vitest`+`jsdom`(Webview内ロジックの単体テスト)でVSCode上で完結させる方針のため、ブラウザ操作系MCP(Playwright等)は導入していません。
 
 `context7` はAPIキーがなくても動作しますが、レート制限緩和のため任意で設定できます。
 

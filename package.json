@@ -17,6 +17,7 @@
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.0.0",
     "eslint": "^9.0.0",
+    "jsdom": "^25.0.0",
     "prettier": "^3.0.0",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.0.0",
