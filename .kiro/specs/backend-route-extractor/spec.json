@@ -1,9 +1,9 @@
 {
   "feature_name": "backend-route-extractor",
   "created_at": "2026-06-14T00:30:15Z",
-  "updated_at": "2026-06-14T13:00:00Z",
+  "updated_at": "2026-06-14T13:30:00Z",
   "language": "ja",
-  "phase": "design-generated",
+  "phase": "tasks-generated",
   "approvals": {
     "requirements": {
       "generated": true,
@@ -11,13 +11,13 @@
     },
     "design": {
       "generated": true,
-      "approved": false
+      "approved": true
     },
     "tasks": {
-      "generated": false,
-      "approved": false
+      "generated": true,
+      "approved": true
     }
   },
-  "ready_for_implementation": false,
-  "notes": "TypeScript + web-tree-sitter(WASM)で design を再生成。出力スキーマ・ID体系・Pass0-2cパイプライン・抽出アルゴリズムは旧設計から保持し、解析基盤のみ置換。詳細は design.md / research.md(設計転換 2026-06-14)を参照。"
+  "ready_for_implementation": true,
+  "notes": "TypeScript + web-tree-sitter(WASM)版の requirements/design/tasks を再生成・自動承認。出力スキーマ・ID体系・Pass0-2cは旧設計から保持。実装は /kiro-impl backend-route-extractor。"
 }
