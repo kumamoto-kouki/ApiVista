@@ -35,7 +35,7 @@
   - _Requirements: 1.1, 1.4, 5.2, 5.3_
   - _Boundary: extractors/routes_
 
-- [ ] 2.4 (P) router関係と`FastAPI()`インスタンスの抽出を実装する
+- [x] 2.4 (P) router関係と`FastAPI()`インスタンスの抽出を実装する
   - `APIRouter(prefix=...)`定義、`include_router(prefix=...)`呼び出し(対象オブジェクト名・included router式・prefixリテラル)、`FastAPI()`インスタンス生成を抽出し、`FastAPI()`をパス解決のBFS起点候補としてマークする
   - 観測可能な完了状態: `sample_app`に対して実行すると`app`が起点候補として識別され、items(prefix `/api`)/users(prefix無し)の関係グラフが構築されることを確認できる
   - _Requirements: 1.2, 1.3_
