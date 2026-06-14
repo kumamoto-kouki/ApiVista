@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. 基盤: プロジェクト構成・出力モデル・テストフィクスチャ
-- [ ] 1.1 Pythonパッケージのビルド構成とCLIスケルトンを整備する
+- [x] 1.1 Pythonパッケージのビルド構成とCLIスケルトンを整備する
   - `pyproject.toml`に`[build-system]`(hatchling)・`[tool.hatch.build.targets.wheel]`・`pydantic>=2.12`依存・`[project.scripts]`を設定し、`src/apivista_backend_analysis/`パッケージの初期構成(`__init__.py`)を作成する
   - 観測可能な完了状態: `uv run apivista-backend-analysis --help`がエラーなく実行され、使用方法が表示される
   - _Requirements: 6.1, 6.2, 6.3_
