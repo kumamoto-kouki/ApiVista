@@ -20,7 +20,8 @@
   - `MetadataWrapper`はノードのディープコピーを伴いコストが高い。読み取り専用解析では`unsafe_skip_copy=True`が利用可能
   - 前方参照文字列アノテーション・ワイルドカードimport・`TYPE_CHECKING`ブロック・動的importは`ScopeProvider`の解決対象外(既知の限界として受容)
 - **Implications**:
-  - 「Pass0: 自前モジュールマップ構築 → Pass1: 各ファイル抽出(MetadataWrapper+ScopeProvider, unsafe_skip_copy) → Pass2: ルートパス解決+呼び出しグラフ構築」の3段構成を採用
+  - 「Pass0: 自前モジュールマップ構築 → Pass1: 各ファイル抽出(MetadataWrapper+ScopeProvider, unsafe_skip_copy) → Pass2: クロスファイル解決(Pass2aルートパス解決 / Pass2b呼び出しグラフ構築 / Pass2cスキーマ参照解決)」の多段構成を採用
+  - スキーマ参照も`ScopeProvider`の単一ファイル制約を受けるため、Pass1ではスキーマ参照候補とクラス定義レジストリの収集のみ行い、別ファイル定義モデルの定義位置特定・`BaseModel`継承判定はPass2cでModule Map+レジストリ経由のクロスファイル解決として実施する(ルート/呼び出しと対称)
   - 解決できないケース(前方参照アノテーション、動的import等)はベストエフォートとし、解決不能な場合は`warnings`に記録して処理を継続する設計とする
 
 ### 出力スキーマとPython-TS連携
@@ -55,6 +56,7 @@
 - **Selected Approach**: 2を採用。`functions[].calls: list[str]`(関数ID)、`files[].dependsOn: list[str]`(ファイルID)
 - **Rationale**: 再帰木構造はPydantic JSON Schema生成時の循環参照・discriminated union問題(research.md参照)に当たりやすく、また同一関数が複数ルートから呼ばれる場合に重複表現となる。エッジリストは循環呼び出しも安全に表現でき、3階層(ルート/ファイル/関数)間のID参照(要件4.2)とも自然に整合する
 - **Trade-offs**: 消費側(route-linkage-engine/vscode-extension-ui)はID解決のための索引構築が必要になるが、JSONのシンプルさ・安全性の方が優先度が高い
+- **ID採番規則**: ID参照方式の前提として、関数ID=`<module-dotted-path>:<qualname>`、ファイルID=`backend_root`相対POSIXパスとし、共有ヘルパー`ids.py`で全パス(Pass2a/2b/2c)が同一スキームを使う。これによりパス間のキー一致(schemaRefsマージ・階層トラバーサル)を保証する
 - **Follow-up**: route-linkage-engine設計時に、このID参照形式が連携マッチングの入力として十分か再確認する
 
 ### Decision: CLI出力契約(stdout=JSON専用、warnings配列、終了コード)
