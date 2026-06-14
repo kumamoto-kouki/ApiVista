@@ -32,9 +32,6 @@ const ext = path.extname(filePath);
 if ([".ts", ".tsx", ".js", ".mjs", ".cjs"].includes(ext)) {
   run("npx", ["eslint", "--fix", filePath]);
   run("npx", ["prettier", "--write", filePath]);
-} else if (ext === ".py") {
-  run("uv", ["run", "ruff", "format", filePath]);
-  run("uv", ["run", "ruff", "check", "--fix", filePath]);
 }
 
 process.exit(0);

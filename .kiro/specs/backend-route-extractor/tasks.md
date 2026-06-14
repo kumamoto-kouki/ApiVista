@@ -118,7 +118,7 @@
   - _Requirements: 4.1, 4.3, 5.1, 5.3, 6.1, 6.4_
   - _Depends: 4.2, 4.3, 5.1_
 
-- [ ] 5.3 旧Python実装資産を撤去する
+- [x] 5.3 旧Python実装資産を撤去する
   - TS実装のE2Eが通過した後、旧Python解析パッケージ・Pythonテスト・Pythonビルド構成(pyproject等)を削除する。解析対象の入力フィクスチャ(`tests/fixtures/sample_app`)は温存する
   - 観測可能な完了状態: 旧Python実装が除去されてもTSのE2E/単体テストが全て通過し、フィクスチャが残存していることを確認できる
   - _Requirements: 6.4_
