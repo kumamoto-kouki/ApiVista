@@ -370,6 +370,53 @@ export function assembleOutput(
 
 JSON キー名・型・必須性は旧設計から不変。`schemaVersion=1`。
 
+構造と**参照貫通(実装の不変条件)**を図示する。`..>` は値による参照(IDが一致すること)を表す。
+
+```mermaid
+classDiagram
+  class AnalysisOutput {
+    +number schemaVersion
+  }
+  class RouteDefinition {
+    +string method
+    +string path
+    +string entryFunctionId
+  }
+  class SchemaReference {
+    +string className
+    +string role
+  }
+  class FunctionNode {
+    +string id
+    +string file
+    +string[] calls
+  }
+  class FileNode {
+    +string id
+    +string[] dependsOn
+  }
+  class Warning {
+    +string target
+    +string reason
+  }
+  class SourceLocation {
+    +string file
+    +number line
+  }
+  AnalysisOutput "1" *-- "*" RouteDefinition : routes
+  AnalysisOutput "1" *-- "*" FunctionNode : functions
+  AnalysisOutput "1" *-- "*" FileNode : files
+  AnalysisOutput "1" *-- "*" Warning : warnings
+  RouteDefinition "1" *-- "*" SchemaReference : schemaRefs
+  RouteDefinition --> SourceLocation : handler
+  SchemaReference --> SourceLocation : location
+  FunctionNode --> SourceLocation : location
+  RouteDefinition ..> FunctionNode : entryFunctionId == id
+  FunctionNode ..> FileNode : file == id
+  FunctionNode ..> FunctionNode : calls[] == id
+  FileNode ..> FileNode : dependsOn[] == id
+```
+
 ```typescript
 export const SCHEMA_VERSION = 1 as const;
 

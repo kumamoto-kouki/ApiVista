@@ -41,6 +41,20 @@ ApiVista は、モノレポ構成(`backend/` に FastAPI、`frontend/` に Nuxt.
   - 深度(3階層)の表現方法は抽出データのスキーマとUIの描画ロジック双方に影響するため、spec 1/2 のデータモデル設計時にUI側の要件(spec 4)を意識する
 
 ## Specs (dependency order)
+
+依存関係とデータフロー(抽出器2つ → 連携エンジン → UI):
+
+```mermaid
+flowchart LR
+  BE["backend-route-extractor<br/>(TS + web-tree-sitter)<br/>ルート定義・スキーマ参照・呼び出しグラフ"]
+  FE["frontend-call-extractor<br/>(TS + ts-morph)<br/>API呼び出し・呼び出しグラフ"]
+  RL["route-linkage-engine<br/>URL静的マッチング + OpenAPI照合<br/>3階層データモデル構築"]
+  UI["vscode-extension-ui<br/>Webview可視化・深度切替・ソースジャンプ"]
+  BE -->|AnalysisOutput| RL
+  FE -->|対称スキーマの抽出結果| RL
+  RL -->|3階層連携データ| UI
+```
+
 - [ ] backend-route-extractor -- FastAPIのPythonコードを TypeScript + web-tree-sitter(WASM)で AST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する。Dependencies: none
 - [ ] frontend-call-extractor -- Nuxt.jsのVue/TSコードを解析し、API呼び出し(URL・method・呼び出し元位置)とコンポーネント/関数単位の呼び出しグラフを抽出する。Dependencies: none
 - [ ] route-linkage-engine -- バックエンド/フロントエンドの抽出結果を受け取り、URLパス静的マッチング+OpenAPIスキーマ照合のハイブリッドでルートとAPI呼び出しを連携付け、3階層のデータモデルを構築する。Dependencies: backend-route-extractor, frontend-call-extractor
