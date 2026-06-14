@@ -133,3 +133,5 @@
 - ID決定性: `qualname`は祖先の`class_definition`/`function_definition`を`.`連結して構築する共通規則で算出し、Pass1/2a/2b/2cで同一ハンドラのIDを一致させること(entryFunctionId = 関数ノードID = スキーマ参照マージキー)。
 - ID非対称性: モジュールドット表記は`backend_root`のbasenameをルートに含む(例 `sample_app.routers.items`)が、ファイルIDは含まない相対パス(例 `routers/items.py`)。両者は文字列変換ではなくモジュールマップのルックアップで対応させる。
 - `tests/fixtures/sample_app/**` は解析INPUT(Pythonソース)であり、旧Python実装を撤去(5.3)してもテスト入力として温存する。
+- (task 1.1で確認)依存の実証済み組み合わせ: `web-tree-sitter@0.25.10` + `tree-sitter-wasms@0.1.13`(`out/tree-sitter-python.wasm`)はABI整合し、`broken.py`が`rootNode.hasError=true`になることも確認済み。ランタイムWASMは`web-tree-sitter/tree-sitter.wasm`、文法は`tree-sitter-wasms/out/tree-sitter-python.wasm`をnode_modulesから解決(`parser.ts`の`getPythonParser(wasmDir?)`)。
+- (task 1.1で確認)tsconfigはTS6+Node16で`@types/node`が自動適用されず、`compilerOptions.types: ["node"]`の明示が必要(`import.meta.url`/`node:*`解決のため)。テストファイルは`tsc`ビルドから除外し、型・実行はvitestが担う。
