@@ -26,6 +26,10 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# routers/broken.py is an intentionally syntax-invalid fixture used to test
+# Requirement 5.1 (syntax-error files are skipped with a warning); it must
+# not be linted or parsed by ruff.
+extend-exclude = ["tests/fixtures/sample_app/routers/broken.py"]
 target-version = "py311"
 
 [tool.ruff.lint]
