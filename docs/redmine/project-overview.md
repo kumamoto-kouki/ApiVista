@@ -55,7 +55,7 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 npm install
 ```
 
-> 注: backend-route-extractor は旧 Python 実装から TypeScript + web-tree-sitter(WASM)へ再実装中で、旧実装の資産が暫定的に残っています(Phase 2 で削除予定)。配布物・エンドユーザー手順には含まれません。
+> 注: backend-route-extractor は TypeScript + web-tree-sitter(WASM)で実装されています(旧 Python 実装は撤去済み)。解析対象の Python ソースは `tests/fixtures/sample_app/` にテスト入力としてのみ存在します。
 
 ## 開発の進め方
 
