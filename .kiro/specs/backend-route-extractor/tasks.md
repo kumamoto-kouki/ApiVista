@@ -22,7 +22,7 @@
   - 観測可能な完了状態: 構文エラーファイル以外がlibcstでパース可能であり、後続タスクの検証フィクスチャとして利用できる
   - _Requirements: 1.2, 1.3, 2.1, 5.1, 5.2_
 
-- [ ] 2. モジュールマップ構築(Pass0)を実装する
+- [x] 2. モジュールマップ構築(Pass0)を実装する
   - `backend/`配下の`.py`を走査し、モジュールドット表記とファイルパスの対応・公開トップレベル名一覧を構築し、`backend/`配下かどうかを判定するヘルパーを提供する。構文エラーファイルはエラーコレクター経由で警告化しスキップする
   - 観測可能な完了状態: `tests/fixtures/sample_app`に対して実行すると、各モジュールのドット表記とファイルパスの対応が正しく構築され、構文エラーファイルがスキップされて警告が1件記録される
   - _Requirements: 1.3, 3.3, 6.1, 5.1_
@@ -109,3 +109,7 @@
   - 観測可能な完了状態: `test_cli_integration.py`が`sample_app`実行ケースと存在しないディレクトリ指定ケースの両方で期待した終了コード・出力分離・警告内容を検証し、成功する
   - _Requirements: 4.1, 4.3, 5.1, 5.3, 6.1, 6.2, 6.3_
   - _Depends: 5.2_
+
+## Implementation Notes
+
+- Task 2: `ModuleMap`のモジュールドット表記(`build_module_map`が生成)は`backend_root.name`をルートセグメントとして含む(例: `sample_app.routers.items`)が、`ids.make_file_id(backend_root, file_path)`が返す相対パス(例: `routers/items.py`)はこのセグメントを含まない。両者は単純な文字列変換では相互変換できないため、Pass1/Pass2/Assemblerで関数IDとファイルIDを同時に必要とする場合は、文字列操作ではなく`ModuleMap.module_to_path`/`path_to_module`を介して対応関係を取得すること。
