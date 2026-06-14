@@ -19,9 +19,11 @@
     "eslint": "^9.0.0",
     "jsdom": "^25.0.0",
     "prettier": "^3.0.0",
+    "tree-sitter-wasms": "^0.1.13",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "web-tree-sitter": "^0.25.10"
   },
   "dependencies": {
     "ts-morph": "^23.0.0"

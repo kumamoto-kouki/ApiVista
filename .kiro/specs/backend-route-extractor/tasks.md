@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. 基盤: 解析モジュールのビルド・テスト基盤と共有ユーティリティ
-- [ ] 1.1 TypeScript解析モジュールのビルド・テスト基盤とパーサ初期化を整備する
+- [x] 1.1 TypeScript解析モジュールのビルド・テスト基盤とパーサ初期化を整備する
   - `web-tree-sitter`(^0.25系)とPython文法WASMを依存に追加し、vitestのテスト設定を用意する
   - パーサ初期化(WASM init→Python文法ロード→言語設定)をプロセス内シングルトンとして提供し、拡張ホスト/Node双方でWASMの所在を解決できる仕組みにする
   - 観測可能な完了状態: 既存の`tests/fixtures/sample_app`(Pythonソース)を入力に、外部ランタイム(Python/uv)無しでパース木が取得できることをsmokeテストで確認できる
