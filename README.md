@@ -26,7 +26,26 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 - **バックエンド解析**: Python(libcst)、AST解析
 - **フロントエンド/フロントエンド解析対象**: Nuxt.js(Vue/TS)
 - **ツール構成**: ESLint / Prettier(TS)、ruff / pytest(Python)、Vitest(テスト)
-- **AI開発支援**: Kiro-style Spec-Driven Development、Serena MCP
+- **AI開発支援**: Kiro-style Spec-Driven Development、MCPサーバー群(下記参照)
+
+## MCPサーバー構成
+
+`.mcp.json` で以下のMCPサーバーを構成しています。ツール数の肥大化を避けるため、既存ツール(`gh` CLIや拡張思考)と役割が重複するサーバーは導入していません。
+
+| サーバー | 用途 |
+| --- | --- |
+| `serena` | セマンティックなコード検索・編集(LSPベース) |
+| `context7` | ライブラリの最新ドキュメント取得(FastAPI/Pydantic/libcst/Nuxt等のバージョン追従) |
+| `playwright` | ブラウザ操作・E2Eテスト自動化(Webview/フロントエンド検証) |
+| `semgrep` | 静的解析による脆弱性スキャン(OWASP Top10系) |
+
+`context7` はAPIキーがなくても動作しますが、レート制限緩和のため任意で設定できます。
+
+```bash
+export CONTEXT7_API_KEY="..."  # context7.com で取得(任意)
+```
+
+設定変更後はClaude Codeの再起動(MCPサーバー再接続)が必要です。
 
 ## スペック構成(依存関係順)
 
