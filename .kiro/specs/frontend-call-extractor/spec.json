@@ -1,12 +1,12 @@
 {
   "feature_name": "frontend-call-extractor",
   "created_at": "2026-06-14T15:56:42Z",
-  "updated_at": "2026-06-14T15:56:42Z",
+  "updated_at": "2026-06-14T16:40:00Z",
   "language": "ja",
-  "phase": "initialized",
+  "phase": "requirements-generated",
   "approvals": {
     "requirements": {
-      "generated": false,
+      "generated": true,
       "approved": false
     },
     "design": {
