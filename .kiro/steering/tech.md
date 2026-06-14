@@ -45,7 +45,7 @@ ApiVista は単一の VSCode 拡張機能であり、全構成要素を **TypeSc
 
 ### 開発時ツールと配布物の区別
 - 上記「外部ランタイム不要」原則は**配布される拡張機能のエンドユーザー実行**に対する制約である。
-- 開発時のツール(`.mcp.json` の serena/semgrep が使う uvx、過去の ruff/pytest 等)はこの原則の対象外であり、開発者環境にのみ存在すればよい。
+- 開発時のツール(`.mcp.json` の serena/semgrep が使う uvx 等)はこの原則の対象外であり、開発者環境にのみ存在すればよい。なお旧Python実装で使用していた ruff/pytest は backend の TS 再実装に伴い撤去済み。
 
 ---
 _Document standards and patterns, not every dependency_

@@ -69,4 +69,4 @@ Skills are located in `.claude/skills/kiro-*/SKILL.md`
 - Context: prefer targeted `Read` (with `offset`/`limit`) and `Grep` over full-file reads on large files; use Explore subagents for broad/uncertain searches to keep main context lean
 - Output: keep responses concise; avoid restating full file contents already shown in the conversation
 - Session hygiene: use `/clear` when switching to an unrelated spec, `/compact` at milestone boundaries
-- A `PostToolUse` hook (`.claude/hooks/format-on-edit.mjs`) auto-runs eslint/prettier (TS/JS) or ruff (Python) after Edit/Write, so do not manually re-fix formatting/lint issues that the hook already handles
+- A `PostToolUse` hook (`.claude/hooks/format-on-edit.mjs`) auto-runs eslint/prettier (TS/JS) after Edit/Write, so do not manually re-fix formatting/lint issues that the hook already handles
