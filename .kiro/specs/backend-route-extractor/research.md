@@ -75,6 +75,40 @@
 - リスク: Pydantic v2のJSON Schema出力が将来バージョンで変わる可能性 — 対応: `schemaVersion`フィールドで出力契約を明示し、変更時はバージョンをインクリメントする
 
 ## References
-- libcst公式ドキュメント(matchers, metadata.ScopeProvider, FullyQualifiedNameProvider) — Pass設計の根拠
+- libcst公式ドキュメント(matchers, metadata.ScopeProvider, FullyQualifiedNameProvider) — 旧Pass設計の根拠(実装基盤は下記の転換でweb-tree-sitterへ置換)
 - Pydantic v2 `model_json_schema` ドキュメント — Optional/discriminated unionの出力形式に関する既知の制約
 - json-schema-to-typescript — JSON SchemaからTS型生成の標準的な選択肢(downstream specで利用)
+
+---
+
+## 設計転換(2026-06-14): 実装基盤を Python(libcst) → TypeScript + web-tree-sitter(WASM)へ
+
+### Context
+プロジェクト方針「VSCode拡張を導入するだけで全OS動作・外部ランタイム不要」(Requirement 6.4)に合わせ、本抽出器の実装をPython(libcst)CLIから、拡張ホスト(Node/Electron)上でインプロセス動作する TypeScript + web-tree-sitter(WASM)へ転換した。**出力スキーマ・ID体系・Pass0–2cパイプライン・抽出アルゴリズムは保持**し、解析基盤のみ置換する。分析対象は引き続きPython FastAPIコード。
+
+### Decision: パーサに web-tree-sitter(WASM)を採用、node-tree-sitter(ネイティブ)は不採用
+- **Alternatives**: (1) node-tree-sitter(ネイティブNodeアドオン) (2) web-tree-sitter(WASM) (3) Pyodide等でlibcstをWASM実行
+- **Selected**: (2) web-tree-sitter
+- **Rationale**: node-tree-sitterはVSCodeのElectron ABI向け再ビルド+OS/arch別プリビルドバイナリ同梱が必須で「導入のみ動作」を堅牢に満たせない(ABI不一致・プラットフォーム別失敗の既知問題: tree-sitter/node-tree-sitter#126/#169/#188, microsoft/vscode-discussions#768)。web-tree-sitterは単一`.wasm`でネイティブコンパイル不要・全OS同一動作。Microsoft公式`@vscode/tree-sitter-wasm`がPython文法を含むプリビルドWASMを提供しVSCode本体もこの方式。(3)はlibcst/CPythonのWASM化が重く非現実的
+- **Trade-offs**: tree-sitterはlibcstのScopeProvider/matchersを持たないため、スコープ解決とパターン抽出をTS側で自前実装する必要がある(下記)
+
+### Decision: web-tree-sitter は `^0.25.x` に固定し WASM ABI を整合させる
+- **Rationale**: web-tree-sitter 0.26系はtree-sitter-cli旧版がビルドしたWASMとABI非互換(tree-sitter/tree-sitter#5171)。`@vscode/tree-sitter-wasm`はtree-sitter core v0.25系をpinしているため、ランタイムも`^0.25`で揃える
+- **Follow-up**: /kiro-impl 時に実際の解決バージョンとWASM読み込みをsmokeテストで確認
+
+### libcst固有機能のTS側代替(設計差分)
+- **構文エラー検出**: libcstは`ParserSyntaxError`を送出。tree-sitterは例外を投げず`tree.rootNode.hasError`で判定 → Pass0でskip+警告化
+- **位置情報**: `node.startPosition.row`は0基底。`SourceLocation.line`は1基底のため+1する(libcst PositionProviderは1基底だった)
+- **ScopeProvider代替**: tree-sitterにスコープ解決が無いため、ファイル単位のシンボルテーブル(`symbolTable.ts`)を自前構築。トップレベルのimport/class/def を走査し、名前→{ローカルClassDef位置 | import完全修飾名 | builtin}へ解決。これがschemas.pyのScopeProvider相当を代替
+- **文字列リテラル**: `evaluated_value`相当が無いため`stripStringLiteral`を実装(`'`,`"`,`"""`,r/b/f接頭辞対応)。f-stringは別ノード型→未解決(パス警告)
+- **パターン抽出**: matchersをtree-sitter Query(S式)+手書きノード走査で代替
+
+### Decision: 公開インターフェースは「インプロセスTSモジュールAPI」(CLIは開発用任意)
+- **Rationale**: Requirement 6.4(外部ランタイム不要)を満たすため、vscode-extension-uiは外部プロセス起動でなく`analyzeBackend(backendRoot): Promise<AnalysisOutput>`をインプロセス呼び出しする。WASM初期化が非同期のためAPIは`Promise`を返す。旧CLI出力契約(stdout=JSON専用/warnings/終了コード)は開発・デバッグ用の薄いCLIラッパとして維持
+- **WASM配置**: 拡張は`context.extensionUri`由来の絶対パスからWASMをロード(VSIX同梱)。vitest/Nodeはnode_modulesから解決。VSIXへの`.wasm`同梱ビルド設定自体はvscode-extension-ui/実装フェーズが所有
+
+### References(追加)
+- microsoft/vscode-tree-sitter-wasm(`@vscode/tree-sitter-wasm`) — VSCode公式のtree-sitter WASMプリビルド(Python文法含む)
+- tree-sitter/tree-sitter binding_web README — web-tree-sitter API(Parser.init / Language.load / setLanguage / parse / Query)
+- tree-sitter/node-tree-sitter #126/#169/#188, microsoft/vscode-discussions #768 — ネイティブアドオンのElectron ABI問題
+- tree-sitter/tree-sitter #5171 — web-tree-sitter 0.26のWASM ABI非互換
