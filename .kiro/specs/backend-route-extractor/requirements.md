@@ -11,7 +11,9 @@ greenfieldであり、対象プロジェクト(`backend/` 配下のFastAPIコー
 
 出力データは route-linkage-engine と vscode-extension-ui が共通スキーマとして利用できる形式(JSON等)とする。
 
-PythonのASTモジュール(またはそれに準ずる静的解析手法)を用いて、FastAPIのデコレータ(`@app.get`, `@router.post` 等)からルート定義を抽出し、ハンドラ関数本体を再帰的に解析して呼び出しグラフ(ファイル間・関数間)を構築するアプローチを想定する。
+静的解析により、FastAPIのデコレータ(`@app.get`, `@router.post` 等)からルート定義を抽出し、ハンドラ関数本体を再帰的に解析して呼び出しグラフ(ファイル間・関数間)を構築するアプローチを想定する(具体的な解析手段は設計フェーズで決定する)。
+
+本抽出器はVSCode拡張機能の一部として、利用者の環境に外部の言語ランタイムやパッケージマネージャを別途インストールさせることなく動作することが求められる(「拡張機能を導入するだけで動作する」)。
 
 ### Scope
 - **In**: FastAPIルートデコレータの検出とパス/method/ハンドラ関数の抽出、ハンドラが参照するPydanticモデル(リクエスト/レスポンス)などOpenAPIスキーマ関連情報の抽出、ハンドラ関数を起点としたファイル単位・関数単位の呼び出しグラフ構築(静的解析)、抽出結果を構造化データ(JSON等)として出力するインターフェース
@@ -20,6 +22,7 @@ PythonのASTモジュール(またはそれに準ずる静的解析手法)を用
 ### Constraints
 - 対象は `backend/` ディレクトリ配下のFastAPI(Python)コードを前提とする
 - 静的解析のみで、対象プロジェクトの実行・依存パッケージのインストールは不要であることが望ましい
+- 抽出器自体の実行に、利用者環境への外部の言語ランタイム・パッケージマネージャの別途インストールを前提としない
 - 出力データスキーマは route-linkage-engine と vscode-extension-ui(3階層表示: ルート連携/ファイル単位/関数単位)双方の要件を満たす設計とする
 
 ## Introduction
@@ -28,7 +31,7 @@ Backend Route Extractorは、FastAPIバックエンド(`backend/`配下)のPytho
 ## Boundary Context
 - **In scope**: `backend/`配下のFastAPIルート定義の抽出(デコレータ方式、`include_router`のprefix結合による完全パス算出を含む)、ルートハンドラに関連するリクエスト/レスポンスモデルの参照抽出、ハンドラを起点とした`backend/`内コードのファイル単位・関数単位の呼び出しグラフ構築、これらを統合した構造化データの出力
 - **Out of scope**: フロントエンド側コードの解析(frontend-call-extractorが担当)、ルートと呼び出しの連携マッチング(route-linkage-engineが担当)、UI/Webviewでの可視化(vscode-extension-uiが担当)、動的解析・実行時トレース、デコレータ方式以外のプログラム的ルート登録(`add_api_route`等)、`backend/`外(標準ライブラリ・外部パッケージ)への呼び出し追跡
-- **Adjacent expectations**: 出力データのスキーマは、route-linkage-engineの入力契約およびvscode-extension-uiの3階層表示要件を満たすことが前提となる。frontend-call-extractorの出力と対称的な構造を持つことが期待される
+- **Adjacent expectations**: 出力データのスキーマは、route-linkage-engineの入力契約およびvscode-extension-uiの3階層表示要件を満たすことが前提となる。frontend-call-extractorの出力と対称的な構造を持つことが期待される。本抽出器はVSCode拡張機能(vscode-extension-ui)から呼び出されて利用されることを前提とし、その呼び出し側に外部ランタイムの別途用意を求めない
 
 ## Requirements
 
@@ -73,9 +76,10 @@ Backend Route Extractorは、FastAPIバックエンド(`backend/`配下)のPytho
 3. When ファイルまたはルートが解析対象から除外された場合, the Backend Route Extractor shall その除外理由を含む警告情報を出力データに記録する
 
 ### Requirement 6: 実行範囲とスコープ
-**Objective:** As an operator, I want 抽出処理が`backend/`ディレクトリと静的解析のみに限定されることを期待する, so that 実行結果が予測可能で安全である
+**Objective:** As an operator, I want 抽出処理が`backend/`ディレクトリと静的解析のみに限定され、かつ外部ランタイムの別途インストールなしに動作することを期待する, so that 実行結果が予測可能で安全であり、拡張機能を導入するだけで利用できる
 
 #### Acceptance Criteria
 1. The Backend Route Extractor shall `backend/`ディレクトリ配下のPythonソースファイルのみを解析対象とする
 2. The Backend Route Extractor shall 対象プロジェクトのコードを実行せず、静的解析のみによって抽出処理を行う
 3. The Backend Route Extractor shall 対象プロジェクトの依存パッケージのインストールを抽出処理の前提条件としない
+4. The Backend Route Extractor shall 利用者環境への外部の言語ランタイムまたはパッケージマネージャの別途インストールを必要とせずに抽出処理を実行できる

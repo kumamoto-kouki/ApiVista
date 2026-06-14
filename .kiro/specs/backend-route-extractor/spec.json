@@ -1,13 +1,13 @@
 {
   "feature_name": "backend-route-extractor",
   "created_at": "2026-06-14T00:30:15Z",
-  "updated_at": "2026-06-14T12:00:00Z",
+  "updated_at": "2026-06-14T12:30:00Z",
   "language": "ja",
-  "phase": "initialized",
+  "phase": "requirements-generated",
   "approvals": {
     "requirements": {
       "generated": true,
-      "approved": false
+      "approved": true
     },
     "design": {
       "generated": false,
@@ -19,5 +19,5 @@
     }
   },
   "ready_for_implementation": false,
-  "notes": "実装方式を Python(libcst)CLI から TypeScript + web-tree-sitter(WASM)へ転換したため承認をリセット。旧 design.md(Pass0-2c)・tasks.md・Python実装は無効。requirements の実行範囲(Requirement 6)を再改訂のうえ design から再生成する。詳細は brief.md の Design Phase Note と steering/tech.md を参照。"
+  "notes": "TypeScript + web-tree-sitter(WASM)への再実装に伴い requirements を改訂(実行環境の独立性=外部ランタイム不要を Requirement 6 に追加)。旧 libcst design.md/tasks.md/Python実装は無効のため design から再生成する。"
 }
