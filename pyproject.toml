@@ -1,0 +1,24 @@
+[project]
+name = "apivista-backend-analysis"
+version = "0.1.0"
+description = "Static analysis tooling for the FastAPI route/call-graph extractor"
+requires-python = ">=3.11"
+dependencies = [
+    "libcst>=1.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
