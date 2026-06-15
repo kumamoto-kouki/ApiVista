@@ -7,7 +7,7 @@
   - _Requirements: 3.3, 4.1_
   - _Boundary: sfc_
 
-- [ ] 1.2 ts-morph Project 構築を実装する
+- [x] 1.2 ts-morph Project 構築を実装する
   - `frontend/` 配下の `.ts/.js` と、抽出済み `.vue` スクリプト(仮想 `.ts`)を ts-morph Project へ投入し、fileId(frontendRoot相対POSIX)に紐づく SourceFile を取得できるようにする
   - 観測可能な完了状態: `sample_nuxt` の `.ts`/`.vue` が Project に載り、fileId から SourceFile を引けることを確認できる
   - _Requirements: 5.1, 5.2_
