@@ -19,6 +19,7 @@
 - baseURL/相対URLの prefix 補完・正規化(route-linkage-engine が担当)
 - リクエスト/レスポンスのボディ型(スキーマ)抽出、動的解析・実行時トレース
 - 認識対象パターン以外のプログラム的 HTTP クライアント呼び出し、`frontend/` 外への呼び出し追跡
+- **(既知の限界)カスタム axios インスタンス経由の呼び出し(`const api = axios.create(...); api.get(...)` の `api.get`)・リアクティブ/動的に構成される URL は v1 では非認識**(インスタンス出自の追跡は型/データフロー解析が必要なため。将来 `axios.create()` 束縛追跡で拡張余地)。Req1.5 の範囲。
 
 ## Boundary Commitments
 
@@ -275,6 +276,7 @@ export function extractApiCalls(sourceFile: import("ts-morph").SourceFile, fileI
 - URL: 第1引数。文字列リテラルはそのまま、テンプレートリテラルは `astUtils.normalizeUrlTemplate` で `${expr}`→プレースホルダ(`{}`)正規化し、リテラル骨格を保持(Req1.3)。URL骨格自体が動的(変数/関数結果)でパターン化不能 → 除外+`collector.record`(Req4.2)。
 - `enclosingFunctionId`: 最近傍の包含定義(関数/コンポーネント/composable)を `defs` 索引から特定(Req1.4)。
 - `location`: `toSourceLocation(fileId, node, segments)` で .vue 行補正(segment 検索)を適用(Req3.3)。
+- **既知の限界**: 認識は呼び出し名(`$fetch`/`useFetch`/`axios`)に基づくため、カスタム axios インスタンス(`api.get`)やリアクティブURL は非認識(v1 スコープ、Non-Goals 参照)。
 
 #### extractors/defs, calls, templates(Pass1)
 - `defs`: トップレベル関数・矢印関数の名前付き束縛・`use*` composable を `FunctionDefinitionEntry{name,qualname,location}` として収集(backend の functionDefinitions 相当)。
