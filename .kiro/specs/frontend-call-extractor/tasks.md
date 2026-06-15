@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. 基盤: 解析基盤・共有ユーティリティ・フィクスチャ
-- [ ] 1.1 SFC抽出基盤(@vue/compiler-sfc)を整備する
+- [x] 1.1 SFC抽出基盤(@vue/compiler-sfc)を整備する
   - `@vue/compiler-sfc` を依存に追加し、`.vue` から `<script>`/`<script setup>` を結合抽出する仕組みを用意する。結合本文の各領域→元 `.vue` 開始行の対応(segments)と、template からの子コンポーネント参照(PascalCase 正規化)を取得する。SFCパースエラーは script を null とし警告を記録する
   - 観測可能な完了状態: サンプル `.vue`(`<script setup>` 単独 / `<script>`+`<script setup>` 併存)から script 本文・segments・コンポーネント参照が取得でき、併存時の行マッピングが正しいことを単体テストで確認できる
   - _Requirements: 3.3, 4.1_

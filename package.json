@@ -26,6 +26,7 @@
     "web-tree-sitter": "^0.25.10"
   },
   "dependencies": {
+    "@vue/compiler-sfc": "^3.5.38",
     "ts-morph": "^23.0.0"
   }
 }
