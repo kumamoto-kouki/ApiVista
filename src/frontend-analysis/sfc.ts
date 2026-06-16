@@ -7,11 +7,16 @@
  * あわせて `<template>` から子コンポーネント参照（PascalCase 正規化）を収集する。
  * SFC パースエラーは `script=null` + `recordParseError` で記録し、Pass0 でのスキップに委ねる。
  *
- * 注: `SourceLocation` / WarningCollector の正準定義は後続タスク（models / warnings）が提供する。
- * 本モジュールはこの境界では構造的インターフェース（`SfcWarningCollector` / `SourceLocation`）に
- * 依存し、正準型はそれと構造的に互換であることを前提とする。
+ * 位置型 `SourceLocation` は正準 `models.ts` を import（再 export して既存利用元の互換を保つ）。
+ * 警告コレクター契約 `SfcWarningCollector` は正準 `WarningCollector` の公開面から構造的に導出する
+ * （1.3 統合: 重複型を解消しつつ挙動は不変）。
  */
 import { parse } from "@vue/compiler-sfc";
+
+import type { SourceLocation } from "./models.js";
+import type { WarningCollector } from "./warnings.js";
+
+export type { SourceLocation };
 
 /** `parse()` の返す descriptor 型（公開 API から派生し、transitive 依存への直接 import を避ける）。 */
 type SfcDescriptor = ReturnType<typeof parse>["descriptor"];
