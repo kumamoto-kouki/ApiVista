@@ -181,8 +181,12 @@ function indexComponent(fileId: string, componentIndex: Map<string, NameIndexEnt
  * 隣接セグメント間で冗長な重複（`user/User...` の `User`）は Nuxt 準拠で除去する。
  * `components/` 外は単純ファイル名由来の PascalCase（`pages/users.vue`→`Users`）。
  * 完全一致しないケースは best-effort（解決漏れは終端＝誤エッジを作らない）。
+ *
+ * `extractors/defs`（3.2）の単一コンポーネントノード命名にも再利用される
+ * （`componentIndex` キーと defs のコンポーネントノード qualname を一致させ、4.1 の template 参照
+ * →コンポーネントノード解決を破綻させないため。命名規約の単一情報源）。
  */
-function componentNameFromFileId(fileId: string): string {
+export function componentNameFromFileId(fileId: string): string {
   const withoutExt = stripExtension(fileId);
   const segments = withoutExt.split("/");
 
@@ -228,8 +232,11 @@ function toPascalCase(segment: string): string {
     .join("");
 }
 
-/** fileId/相対パスから既知の拡張子（`.ts`/`.js`/`.vue`）を除いた modulePath を返す。 */
-function stripExtension(fileId: string): string {
+/**
+ * fileId/相対パスから既知の拡張子（`.ts`/`.js`/`.vue`）を除いた modulePath を返す。
+ * `extractors/defs`（3.2）の functionId 採番にも再利用する（modulePath 表現の単一情報源）。
+ */
+export function stripExtension(fileId: string): string {
   return fileId.replace(/\.(ts|js|vue)$/, "");
 }
 
