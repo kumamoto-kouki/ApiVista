@@ -49,7 +49,7 @@
   - _Depends: 1.3_
   - _Boundary: extractors/defs_
 
-- [ ] 3.3 (P) 呼び出し式抽出を実装する
+- [x] 3.3 (P) 呼び出し式抽出を実装する
   - 各定義(関数/composable/コンポーネントノード)本体内の呼び出し式を、呼び出し元の識別子(qualname)・callee 名・位置として収集する
   - 観測可能な完了状態: `sample_nuxt` で各定義本体内の呼び出しが呼び出し元付きで収集されることを確認できる
   - _Requirements: 2.1_
