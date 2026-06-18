@@ -46,6 +46,15 @@ export interface FrontendProject {
    * 未登録の fileId も空配列を返す。
    */
   getSegments(fileId: string): ScriptSegment[];
+  /**
+   * `.vue` fileId に紐づく**生ソース**（原文）を返す。未登録 / 非 `.vue` は `undefined`。
+   *
+   * Pass2（callGraph, 4.1）の template コンポーネント参照抽出（`extractTemplateRefs`）は
+   * `extractSfc` 再利用のため `.vue` 生ソースを要求するが、Project へ載るのは抽出済み仮想 `.ts`
+   * のみで生ソースは保持されない。ここで `.vue` の生ソースを保持・公開し、4.1 が二重 parse
+   * （extractSfc 再実行）で template 参照を引けるようにする（design 行オフセット保持と独立）。
+   */
+  getVueSource(fileId: string): string | undefined;
 }
 
 /**
@@ -77,11 +86,20 @@ export function buildProject(
 
   const sourceFiles = new Map<string, SourceFile>();
   const segmentsByFileId = new Map<string, ScriptSegment[]>();
+  const vueSourceByFileId = new Map<string, string>();
 
   for (const fileId of listSourceFileIds(frontendRoot)) {
     const absPath = join(frontendRoot, ...fileId.split("/"));
     if (fileId.endsWith(VUE_EXTENSION)) {
-      addVueFile(project, absPath, fileId, sourceFiles, segmentsByFileId, collector);
+      addVueFile(
+        project,
+        absPath,
+        fileId,
+        sourceFiles,
+        segmentsByFileId,
+        vueSourceByFileId,
+        collector,
+      );
     } else {
       addScriptFile(project, absPath, fileId, sourceFiles, segmentsByFileId);
     }
@@ -97,6 +115,9 @@ export function buildProject(
     },
     getSegments(fileId: string): ScriptSegment[] {
       return segmentsByFileId.get(fileId) ?? [];
+    },
+    getVueSource(fileId: string): string | undefined {
+      return vueSourceByFileId.get(fileId);
     },
   };
 }
@@ -133,6 +154,7 @@ function addVueFile(
   fileId: string,
   sourceFiles: Map<string, SourceFile>,
   segmentsByFileId: Map<string, ScriptSegment[]>,
+  vueSourceByFileId: Map<string, string>,
   collector: SfcWarningCollector,
 ): void {
   const source = readFileUtf8(absPath);
@@ -148,6 +170,9 @@ function addVueFile(
   });
   sourceFiles.set(fileId, sourceFile);
   segmentsByFileId.set(fileId, extracted.script.segments);
+  // 生ソースを保持し、Pass2 の template 参照抽出（extractTemplateRefs）に供する。
+  // script を持つ（= Project に載った）.vue のみ保持し、skip 済みファイルとは整合する。
+  vueSourceByFileId.set(fileId, source);
 }
 
 /**
