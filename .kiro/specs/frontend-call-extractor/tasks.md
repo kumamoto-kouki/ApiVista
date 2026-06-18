@@ -20,7 +20,7 @@
   - _Requirements: 1.3, 3.2, 3.3, 4.3_
   - _Boundary: models, ids, warnings, astUtils_
 
-- [ ] 1.4 Nuxt サンプルフィクスチャを作成する
+- [x] 1.4 Nuxt サンプルフィクスチャを作成する
   - `tests/fixtures/sample_nuxt/` に意図的な検証ケースを配置する: `<script setup>` 直下 `useFetch` + template の `<UserList/>`、ネスト配置コンポーネント(`components/base/Button.vue`→`<BaseButton/>`)、テンプレートリテラル動的URL、auto-import composable(`axios` 呼び出し)、完全動的URL、構文エラーファイル、`~/`/`@/` エイリアス import、`<script>`+`<script setup>` 併存例
   - 観測可能な完了状態: 上記ケースが揃い、後続の抽出/解決タスクの解析INPUTとして利用できる
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 4.1, 4.2_
