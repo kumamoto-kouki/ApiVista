@@ -1,7 +1,5 @@
 # ApiVista 概要
 
-> このページの内容は、Redmineの「ApiVista」プロジェクトのWiki「概要」ページに貼り付けることを想定しています。
-
 ## プロジェクトの目的
 
 ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)を持つプロジェクトを対象に、バックエンドのAPIルートとフロントエンドのAPI呼び出しの連携関係をグラフ/ダイアグラムとしてVSCode上に可視化するVSCode拡張機能です。

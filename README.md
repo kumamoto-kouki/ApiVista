@@ -85,6 +85,6 @@ npm install
 
 詳細は各スペックの `.kiro/specs/{feature}/` 配下のドキュメントを参照してください。
 
-## プロジェクト管理用ドキュメント
+## プロジェクト概要ドキュメント
 
-プロジェクトの概要・導入方法をRedmine(ローカル環境)で共有するための構成を `docs/redmine/` に用意しています。起動方法は [docs/redmine/README.md](docs/redmine/README.md) を参照してください。
+プロジェクトの目的・スコープ・技術スタック・スペック構成・導入方法は [docs/project-overview.md](docs/project-overview.md) にまとめています。
