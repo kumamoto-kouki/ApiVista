@@ -14,7 +14,6 @@
 import { parse } from "@vue/compiler-sfc";
 
 import type { SourceLocation } from "./models.js";
-import type { WarningCollector } from "./warnings.js";
 
 export type { SourceLocation };
 
@@ -34,12 +33,6 @@ interface TemplateNode {
   tagType?: number;
   loc?: { start: { line: number } };
   children?: unknown;
-}
-
-/** ソース位置。`file` は frontendRoot 相対 POSIX パス、`line` は 1 基底。 */
-export interface SourceLocation {
-  file: string;
-  line: number;
 }
 
 /**

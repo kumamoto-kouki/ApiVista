@@ -77,7 +77,8 @@ describe("models", () => {
     });
 
     it("rejects when required arrays are missing", () => {
-      const { apiCalls: _omit, ...rest } = valid;
+      const rest: Record<string, unknown> = { ...valid };
+      delete rest.apiCalls;
       expect(isAnalysisOutput(rest)).toBe(false);
     });
   });
