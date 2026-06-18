@@ -56,7 +56,7 @@
   - _Depends: 1.3_
   - _Boundary: extractors/calls_
 
-- [ ] 3.4 (P) template コンポーネント参照抽出を実装する
+- [x] 3.4 (P) template コンポーネント参照抽出を実装する
   - `.vue` の template から子コンポーネント参照を、当該コンポーネントノード→子コンポーネントのエッジ候補として収集する(動的 `<component :is>` 等は対象外)
   - 観測可能な完了状態: `pages/users.vue` の `<UserList/>` がコンポーネント参照として抽出されることを確認できる
   - _Requirements: 2.1_
@@ -116,3 +116,5 @@
 - (既知の限界・v1スコープ)認識は呼び出し名(`$fetch`/`useFetch`/`axios`)ベース。カスタム axios インスタンス(`const api = axios.create(...); api.get(...)`)やリアクティブ/動的URLは非認識(design Non-Goals 参照)。実装でこれらに過剰対応しないこと。
 - (2.1 知見)`buildFileMap` は生 ts-morph `Project` ではなく `FrontendProject`(project.ts の Pass0 生成物)を取る(実 fileId 反復/`.vue` segments/skip 状態がそこにしかないため)。設計署名との差異だがレビューで健全と承認済み。
 - (2.1 知見・後続3.x/4.1 必読)`.ts/.js` の構文エラー検出は `buildProject` ではなく `fileMap.ts` の `getSyntacticDiagnostics` で行う。**Pass1(3.x)以降は `project.fileIds` ではなく `fileMap.fileIds` を反復**して構文エラーファイルの skip を尊重すること(さもないと Req4.1 の skip 漏れ・解析対象漏れが起きる)。SFCエラーは extractSfc 由来、.ts 構文エラーは fileMap 由来で各1件、二重記録なし。
+- (3.1-3.4 知見・責務分担)Pass1 抽出器の戻り: 3.1 `extractApiCalls`→`ApiCallCandidate[]`(`enclosingFunctionId=""` プレースホルダ)、3.2 `extractDefs`→`FunctionDef[]`+`findEnclosingDef`、3.3 `extractCalls`→`{callerQualname, calleeText, location}[]`、3.4 `extractTemplateRefs(vueSource, fileId, collector)`→`{parentNodeId, parentComponentName, childComponentName, location}[]`。**enclosingFunctionId/callee/子コンポーネント名の解決は全て 4.1 の責務**。caller/親ノード ID は全て `makeFunctionId(stripExtension(fileId), qualname|componentName)` で 3.2 と同一体系。
+- (3.4 知見・4.1 必読)`extractTemplateRefs` は `.vue` **生ソース**を要求する(extractSfc 再利用のため)。現状 `FrontendProject` に生ソースアクセサが無いので、4.1 は `.vue` 生ソースを取得する手段(FrontendProject に raw source を保持/公開する等)を用意する必要がある。二重 parse(extractSfc の再実行)になる点は許容だが、可能なら 4.1 で生ソースをまとめて扱う。
