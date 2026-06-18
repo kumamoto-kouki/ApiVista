@@ -27,7 +27,7 @@
   - _Boundary: fixtures_
 
 - [ ] 2. Pass0: ファイルマップと名前索引
-- [ ] 2.1 ファイルマップ(Pass0)を実装する
+- [x] 2.1 ファイルマップ(Pass0)を実装する
   - `frontend/` 配下の対象ファイルから fileId 集合・エクスポート名索引(関数/composable)・コンポーネント名索引(Nuxt のディレクトリ接頭辞付き命名規約に準拠)を構築し、import 指定子(相対 / `~/` / `@/`)を fileId へ解決するヘルパーを提供する。構文/SFCエラーのファイルはスキップして警告を記録する
   - 観測可能な完了状態: `sample_nuxt` で composable/関数名・コンポーネント名(`UserList`/`BaseButton`)が索引化され、`~/` 指定子が解決され、構文エラーファイルがスキップされて警告が記録されることを確認できる
   - _Requirements: 2.3, 4.1, 5.1_
@@ -114,3 +114,5 @@
 - ID整合: `ApiCall.enclosingFunctionId == FunctionNode.id`、`FunctionNode.file == FileNode.id`、`calls[]/dependsOn[] == id` を不変条件とする(backend と同じ参照貫通)。
 - `tests/fixtures/sample_nuxt/**` は解析INPUT(Vue/TS source)。
 - (既知の限界・v1スコープ)認識は呼び出し名(`$fetch`/`useFetch`/`axios`)ベース。カスタム axios インスタンス(`const api = axios.create(...); api.get(...)`)やリアクティブ/動的URLは非認識(design Non-Goals 参照)。実装でこれらに過剰対応しないこと。
+- (2.1 知見)`buildFileMap` は生 ts-morph `Project` ではなく `FrontendProject`(project.ts の Pass0 生成物)を取る(実 fileId 反復/`.vue` segments/skip 状態がそこにしかないため)。設計署名との差異だがレビューで健全と承認済み。
+- (2.1 知見・後続3.x/4.1 必読)`.ts/.js` の構文エラー検出は `buildProject` ではなく `fileMap.ts` の `getSyntacticDiagnostics` で行う。**Pass1(3.x)以降は `project.fileIds` ではなく `fileMap.fileIds` を反復**して構文エラーファイルの skip を尊重すること(さもないと Req4.1 の skip 漏れ・解析対象漏れが起きる)。SFCエラーは extractSfc 由来、.ts 構文エラーは fileMap 由来で各1件、二重記録なし。
