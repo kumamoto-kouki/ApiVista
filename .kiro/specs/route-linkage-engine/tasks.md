@@ -1,0 +1,83 @@
+# Implementation Plan
+
+- [ ] 1. 基盤: 出力型・ID名前空間化・テストフィクスチャ
+- [ ] 1.1 出力モデル(LinkageOutput)と schemaVersion・型ガードを定義する
+  - `LinkageOutput` / `RouteLinkage` / `RouteRef` / `ApiCallRef` / `LinkedFunctionNode` / `LinkedFileNode` と補助型(`Side` / `MatchKind` / `SourceLocation` / `Warning` / `SchemaReference`)、`SCHEMA_VERSION=1`、`isLinkageOutput` 型ガードを型安全に定義する。入力型は backend/frontend の `models.ts` から型のみ import(改変しない)
+  - 観測可能な完了状態: `LinkageOutput` リテラルが型チェックを通り、`isLinkageOutput` が schemaVersion=1 と必須配列の有無を正しく判定することを単体テストで確認できる
+  - _Requirements: 6.1, 6.2_
+  - _Boundary: models_
+- [ ] 1.2 side 名前空間化ユーティリティを実装する
+  - `namespaceId(side, id)` と、入力 `FunctionNode[]`/`FileNode[]` を `LinkedFunctionNode[]`/`LinkedFileNode[]` へ変換しつつ id・file・calls・dependsOn を一貫して名前空間化する `namespaceFunctions`/`namespaceFiles` を実装する
+  - 観測可能な完了状態: backend/frontend 双方で同一 id が衝突する入力でも、名前空間化後に `backend:`/`frontend:` 接頭辞で一意になり、参照(calls/dependsOn/file)も同じ接頭辞で貫通することを単体テストで確認できる
+  - _Requirements: 5.4, 5.6_
+  - _Depends: 1.1_
+  - _Boundary: ids_
+- [ ] 1.3 (P) 連携テスト用フィクスチャ(AnalysisOutput JSON ペア)を作成する
+  - `tests/fixtures/route-linkage/` に、backend 側 `AnalysisOutput` と frontend 側 `AnalysisOutput` の JSON ペアを作成する。意図的な検証ケースを含める: exact 一致、baseURL 差の suffix 一致、純ワイルドカード末尾(リテラル必須ガードで除外されるべき)、1呼び出しが複数ルートに一致(多重)、未連携(前後双方)、backend スキーマ参照付き、backend/frontend で同一IDが衝突するケース、両入力の warnings
+  - 観測可能な完了状態: 上記ケースが揃った JSON ペアが配置され、後続の統合/E2Eテストの解析INPUTとして利用できる
+  - _Requirements: 2.1, 2.3, 3.1, 3.2, 3.3, 4.1, 5.6_
+  - _Boundary: fixtures_
+
+- [ ] 2. コア: URLパス正規化・判定
+- [ ] 2.1 パスマッチング(canonicalize / methodEquals / matchKind)を実装する
+  - `canonicalize`(`/`分割・空除去・動的セグメント `{name}`/`{}` を `"{}"` へ畳む)、`methodEquals`(大文字一致)、`matchKind`(exact=全長一致かつ全セグメント segEq、suffix=短い方が長い方の末尾に segEq 整合 かつ **一致範囲にリテラル(非 `{}`)一致が1つ以上**=リテラル必須ガード、それ以外 null)を実装する
+  - 観測可能な完了状態: `/api/users/{id}` と `/api/users/{}`=exact、`/users` と `/api/users`=suffix、純ワイルドカード末尾 `["{}"]`/`["{}","{}"]`=null、別パス/method 不一致=null を単体テストで確認できる
+  - _Requirements: 2.1, 2.2, 2.3_
+  - _Depends: 1.1_
+  - _Boundary: pathMatch_
+
+- [ ] 3. コア: 連携構築・グラフ統合
+- [ ] 3.1 連携マッチング(matchRoutes)を実装する
+  - 各 frontend `ApiCall` を全 backend `RouteDefinition` と照合し、`methodEquals` かつ `matchKind!=null` の一致を求める。**exact 優先**(その呼び出しに exact 一致があれば exact linkage のみ採用し、同呼び出しの suffix は抑制して診断記録)、exact が無ければ suffix linkage を採用(多重一致は全保持)。一致0の呼び出し/ルートを unmatched に分類。`RouteRef`/`ApiCallRef` の `entryFunctionId`/`enclosingFunctionId` は名前空間化し、`RouteRef.schemaRefs` を表示用付帯として格納(連携の絞り込みには使わない)。多重一致・suffix抑制・未連携を機械可読な診断 `Warning[]` に記録
+  - 観測可能な完了状態: フィクスチャに対し、exact 単一一致→1 linkage、exact ありの呼び出しは suffix を出さない、exact 無し多重一致→複数 linkage 全保持、未連携 apiCall/route が unmatched に、純ワイルドカードは連携されない、診断が記録されることを単体テストで確認できる
+  - _Requirements: 2.1, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2_
+  - _Depends: 1.2, 2.1_
+  - _Boundary: matcher_
+- [ ] 3.2 (P) 呼び出しグラフ統合(mergeFunctions / mergeFiles)を実装する
+  - backend/frontend 双方の `FunctionNode[]`/`FileNode[]` を `namespaceFunctions`/`namespaceFiles` で名前空間化して連結し、`side` 付きの統合 `LinkedFunctionNode[]`/`LinkedFileNode[]` を生成する
+  - 観測可能な完了状態: 両側の関数/ファイルが統合配列に side 付きで含まれ、ID衝突しても一意で、calls/dependsOn が名前空間化IDで貫通することを単体テストで確認できる
+  - _Requirements: 5.2, 5.3, 5.6_
+  - _Depends: 1.2_
+  - _Boundary: graphMerge_
+
+- [ ] 4. 統合: アセンブリ・公開API・CLI
+- [ ] 4.1 出力アセンブラ(assembleLinkage)を実装する
+  - `MatchResult`・統合 functions/files・両入力 warnings を単一の `LinkageOutput`(`schemaVersion=1`)へ統合する。warnings は両入力 warnings + 診断を集約。**決定性**のため各配列を正準ソートする(linkages=apiCall位置→route method/path、unmatched*=規定キー、functions/files=id 昇順)
+  - 観測可能な完了状態: linkage→route/apiCall→関数ノード→ファイルノードの参照が名前空間化IDで貫通し、warnings に両入力警告+診断が集約され、入力配列順を入れ替えても出力配列順が同一(決定的)であることを単体テストで確認できる
+  - _Requirements: 5.1, 5.4, 5.5, 6.1, 6.3, 6.4, 7.3_
+  - _Depends: 3.1, 3.2_
+  - _Boundary: assemble_
+- [ ] 4.2 公開API(linkRoutes)を実装する
+  - backend/frontend の `AnalysisOutput` を受け取り、入力検証(`schemaVersion=1`・必須配列。不正は throw)→ matchRoutes → mergeFunctions/mergeFiles → assembleLinkage を順に実行して単一 `LinkageOutput` を返す純粋・同期関数を実装する。対象コードは実行しない(静的・データのみ)
+  - 観測可能な完了状態: フィクスチャ入力に対し単一 `LinkageOutput`(schemaVersion=1)を同期返却し、不正入力(schemaVersion 不一致・配列欠落)で throw、外部ランタイム無しで Node 上で完走することを単体テストで確認できる
+  - _Requirements: 1.1, 1.2, 1.3, 6.1, 7.1, 7.2, 7.3_
+  - _Depends: 4.1_
+  - _Boundary: index_
+- [ ] 4.3 開発・E2E用のCLIラッパを実装する
+  - 2つの `AnalysisOutput` JSON ファイルパスを引数に取り、`linkRoutes` の結果を標準出力へ単一JSONのみ、ログを標準エラーへ出力する薄いラッパを実装する。引数不正/ファイル不正は非0終了、連携実行できた場合は終了コード0
+  - 観測可能な完了状態: フィクスチャ JSON ペアに対する実行で終了コード0・標準出力に単一JSON、引数不正/不在ファイルで非0終了となることを確認できる
+  - _Requirements: 6.1, 7.2_
+  - _Depends: 4.2_
+  - _Boundary: cli_
+
+- [ ] 5. 検証: 統合テストとE2E
+- [ ] 5.1 統合テストを追加する
+  - `linkRoutes` の出力に対し: exact/suffix/リテラル必須ガード/多重一致/未連携(前後)/exact優先抑制/スキーマ付帯/3階層参照貫通/警告集約/決定的順序 を、フィクスチャ(または型付きインライン入力)で end-to-end 検証する
+  - 観測可能な完了状態: 上記観点のテストが実行され、すべて成功する
+  - _Requirements: 1.1, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1, 6.3, 6.4, 7.3_
+  - _Depends: 4.2_
+- [ ] 5.2 公開API・CLIのE2Eテストを追加する
+  - コンパイル済みCLIをサブプロセス起動して フィクスチャ JSON ペアを解析し、stdout が単一JSON(schemaVersion含む)のみ・stderr に非JSON混入なし・外部ランタイム無しでNode上で完走・終了コード0、引数不正/不在ファイルで非0終了 を検証する
+  - 観測可能な完了状態: E2Eテストが連携成功ケースと引数不正ケースの両方で期待した出力・終了コードを検証し、成功する
+  - _Requirements: 6.1, 7.2_
+  - _Depends: 4.3, 5.1, 1.3_
+
+## Implementation Notes
+- 実装基盤は純TS(新規依存追加なし)。入力型は `src/backend-analysis/models.ts` / `src/frontend-analysis/models.ts` から**型のみ import**(両モジュールは改変しない)。両者の出力型は同名 `AnalysisOutput` のため、`import type { AnalysisOutput as BackendAnalysisOutput }` 等で別名 import する。
+- 出力型は `src/route-linkage/models.ts` に自己完結で定義。`src/shared/` への共通型統合は完成済み2スペック改変=回帰リスクのため v1 では行わない(design / research の判断。再検証トリガに紐づけ)。
+- ID名前空間化: 統合データ内の全ノードID・参照(`entryFunctionId`/`enclosingFunctionId`/`calls[]`/`file`/`dependsOn[]`)は `"backend:"|"frontend:" + originalId`。`side` で出自を一意識別。参照貫通(`enclosingFunctionId==LinkedFunctionNode.id` 等)は名前空間化後IDで一貫させる。
+- マッチング: exact優先 + リテラル必須ガード(validate-design で承認)。純ワイルドカード末尾の暴発を防ぎ、exact がある呼び出しの suffix ノイズを抑制する。多重一致は全保持(Req3.1)。
+- (validate-design 指摘・診断規約)`Warning` の規約を統一する: `target` = 対象の呼び出し/ルートの位置(例 `"<file>:<line>"` または `urlPattern`/`path`)、`reason` = 機械可読な分類タグ(`multiple-route-match` / `suffix-suppressed` / `unmatched-api-call` / `unmatched-route`)。両入力由来の warnings はそのまま集約。
+- 決定性(Req7.3): assemble で出力各配列を正準ソートし、入力配列順に依存しない安定出力にする。
+- 公開API `linkRoutes` は純粋・同期(ts-morph/web-tree-sitter のような非同期初期化は不要=データのみ)。抽出器の実行(analyzeBackend/analyzeFrontend)は本specの責務外で、vscode-extension-ui が担当。
+- フィクスチャ `tests/fixtures/route-linkage/**` は解析INPUT(AnalysisOutput JSON)。tsc/eslint 対象外(tests 配下)。
