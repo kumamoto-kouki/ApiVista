@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. 基盤: 出力型・ID名前空間化・テストフィクスチャ
-- [ ] 1.1 出力モデル(LinkageOutput)と schemaVersion・型ガードを定義する
+- [x] 1.1 出力モデル(LinkageOutput)と schemaVersion・型ガードを定義する
   - `LinkageOutput` / `RouteLinkage` / `RouteRef` / `ApiCallRef` / `LinkedFunctionNode` / `LinkedFileNode` と補助型(`Side` / `MatchKind` / `SourceLocation` / `Warning` / `SchemaReference`)、`SCHEMA_VERSION=1`、`isLinkageOutput` 型ガードを型安全に定義する。入力型は backend/frontend の `models.ts` から型のみ import(改変しない)
   - 観測可能な完了状態: `LinkageOutput` リテラルが型チェックを通り、`isLinkageOutput` が schemaVersion=1 と必須配列の有無を正しく判定することを単体テストで確認できる
   - _Requirements: 6.1, 6.2_
