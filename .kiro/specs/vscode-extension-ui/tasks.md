@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. 基盤: 拡張マニフェスト・共有型・統合テスト基盤
-- [ ] 1.1 package.json拡張マニフェストと新規依存・ビルドスクリプトを追加する
+- [x] 1.1 package.json拡張マニフェストと新規依存・ビルドスクリプトを追加する
   - `engines.vscode`/`main`/`contributes.commands`(`apivista.showGraph`, `apivista.reanalyze`)/`activationEvents`(`onStartupFinished`)をpackage.jsonに設定する
   - `dependencies`に`cytoscape`、`devDependencies`に`esbuild`・`@types/cytoscape`を追加し、`bundle:webview`スクリプトを`build`から呼び出す
   - `tsconfig.json`の`lib`に`"DOM"`を追加する
