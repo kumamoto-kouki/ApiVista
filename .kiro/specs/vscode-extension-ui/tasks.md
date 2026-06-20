@@ -54,7 +54,7 @@
   - _Boundary: graphPanel, webviewHtml_
 
 - [ ] 4. コア: Webview深度投影・UI操作ロジック
-- [ ] 4.1 (P) projectDepthを実装する
+- [x] 4.1 (P) projectDepthを実装する
   - `depth="route"`/`"file"`/`"function"`それぞれのノード/エッジ導出ロジックを実装する(file/functionは連携エッジと構造エッジを統合し重複を除去する)
   - 未連携のルート/API呼び出しを識別フラグ付きで含める
   - 観測可能な完了状態: 単体テストで3深度のノード/エッジ集合・参照整合性・決定的出力が確認できる
@@ -124,3 +124,4 @@
 - `tsconfig.json`の`exclude`(`src/**/*.test.ts`/`src/**/__tests__/**`)により、vitestテストファイルは`tsc -p tsconfig.json`では型チェックされない(vitestはesbuildでトランスパイルのみ・型チェックなし)。型の正しさをテストファイル経由で保証したい場合は`tsconfig.typecheck.json`(`noEmit:true`・テスト除外なしで`tsc`)+`npm run typecheck:tests`を使うこと(タスク1.2で新設)。
 - `@vscode/test-electron`系のtsconfig派生(`tsconfig.test-electron.json`)は **outDirを本番ビルド(`out/`)と必ず分離する**(`out-test-electron/`)こと。`extends`した子configの`exclude`は親の`exclude`を継承せず完全に上書きするため、子で`exclude`を再定義すると親の除外(`*.test.ts`等)が silently 復活し、同じ`outDir`を共有していると本番ビルドへ漏れ込む(タスク1.3でレビュー3回REJECTの原因)。さらに子configの`include`は対象を最小限に絞り(例: `src/vscode-extension/test/**/*.ts`のみ)、`npm run test:integration`相当のスクリプトには毎回`rm -rf <outDir>`の事前クリーンを入れること(plainな`tsc`は削除されたソースのコンパイル済み出力を自動で消さないため、stale出力が再実行され続ける)。
 - `tests/fixtures/vscode_workspace/{backend,frontend}/`は`sample_app`/`sample_nuxt`のコピーで構成した統合テスト専用フィクスチャワークスペース(単一ルート直下にbackend/frontendを持つ構成)。`@vscode/test-electron`のサンドボックス実行には環境依存の対応が必要だった: `libgtk-3.so.0`不足→`apt-get install libgtk-3-0`、ESM環境で`__dirname`不可→`fileURLToPath(import.meta.url)`、シェルの`ELECTRON_RUN_AS_NODE=1`がElectron起動を阻害→spawn前に`delete process.env.ELECTRON_RUN_AS_NODE`、root実行でサンドボックス不可→`process.getuid?.()===0`時のみ`--no-sandbox`付与。
+- `import type`のみで参照しているモジュールへの相対パスが1階層ズレていても、vitest(esbuildのtranspile-onlyモード)は`import type`をコンパイル前に消去するため**実行時エラーにならずテストは緑のまま**になる(タスク4.1で発覚)。型のみimportを含むファイルを変更した際は、`vitest run`が通っても`npx tsc -p tsconfig.json --noEmit`(および`npm run typecheck:tests`)を必ず実行してパス解決を検証すること。
