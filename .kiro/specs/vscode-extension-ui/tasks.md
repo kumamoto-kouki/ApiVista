@@ -8,7 +8,7 @@
   - 観測可能な完了状態: `package.json`の`contributes.commands`に2コマンドが定義され、`npm run build`がエラーなく完走する
   - _Requirements: 1.2, 1.3, 8.1_
 
-- [ ] 1.2 拡張⇄Webview間メッセージ型(webviewProtocol)を定義する
+- [x] 1.2 拡張⇄Webview間メッセージ型(webviewProtocol)を定義する
   - `HostToWebviewMessage`(`linkageData`)と`WebviewToHostMessage`(`ready`, `nodeClick`)の判別可能合併型を定義する
   - 観測可能な完了状態: 拡張ホスト側・Webview側双方からこの型をimportして`tsc`が型エラーなく完走する
   - _Requirements: 3.1, 5.1_
@@ -121,3 +121,4 @@
 - `analyzeFrontend`は同期、`analyzeBackend`はTRUE非同期(WASM初期化を伴う)。`analysisOrchestrator`はこの非対称性を吸収し、呼び出し順序は`analyzeBackend`→`analyzeFrontend`→`linkRoutes`で統一する。
 - Webview側コード(`src/vscode-extension/webview/`)は`vscode`モジュールへの直接importを持たない(プラットフォーム制約上実行時にも不可能)。`webviewProtocol.ts`の型のみ拡張ホスト側と共有する。
 - `webview/main.ts`のCytoscape初期化はDOM/Canvas依存のため単体テスト対象外。目視確認(`/run`等)で検証する。
+- `tsconfig.json`の`exclude`(`src/**/*.test.ts`/`src/**/__tests__/**`)により、vitestテストファイルは`tsc -p tsconfig.json`では型チェックされない(vitestはesbuildでトランスパイルのみ・型チェックなし)。型の正しさをテストファイル経由で保証したい場合は`tsconfig.typecheck.json`(`noEmit:true`・テスト除外なしで`tsc`)+`npm run typecheck:tests`を使うこと(タスク1.2で新設)。
