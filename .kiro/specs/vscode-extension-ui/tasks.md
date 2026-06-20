@@ -36,7 +36,7 @@
   - _Boundary: analysisOrchestrator_
 
 - [ ] 3. コア: ソースジャンプとWebviewパネル基盤
-- [ ] 3.1 (P) sourceJumpを実装する
+- [x] 3.1 (P) sourceJumpを実装する
   - ワークスペース相対パスを絶対URIに変換し`showTextDocument`で開く
   - 該当行へ`Selection`/`revealRange`でジャンプする
   - ファイルを開けない場合はエラーをthrowする
