@@ -12,7 +12,7 @@
   - _Requirements: 5.4, 5.6_
   - _Depends: 1.1_
   - _Boundary: ids_
-- [ ] 1.3 (P) 連携テスト用フィクスチャ(AnalysisOutput JSON ペア)を作成する
+- [x] 1.3 (P) 連携テスト用フィクスチャ(AnalysisOutput JSON ペア)を作成する
   - `tests/fixtures/route-linkage/` に、backend 側 `AnalysisOutput` と frontend 側 `AnalysisOutput` の JSON ペアを作成する。意図的な検証ケースを含める: exact 一致、baseURL 差の suffix 一致、純ワイルドカード末尾(リテラル必須ガードで除外されるべき)、1呼び出しが複数ルートに一致(多重)、未連携(前後双方)、backend スキーマ参照付き、backend/frontend で同一IDが衝突するケース、両入力の warnings
   - 観測可能な完了状態: 上記ケースが揃った JSON ペアが配置され、後続の統合/E2Eテストの解析INPUTとして利用できる
   - _Requirements: 2.1, 2.3, 3.1, 3.2, 3.3, 4.1, 5.6_
@@ -81,3 +81,4 @@
 - 決定性(Req7.3): assemble で出力各配列を正準ソートし、入力配列順に依存しない安定出力にする。
 - 公開API `linkRoutes` は純粋・同期(ts-morph/web-tree-sitter のような非同期初期化は不要=データのみ)。抽出器の実行(analyzeBackend/analyzeFrontend)は本specの責務外で、vscode-extension-ui が担当。
 - フィクスチャ `tests/fixtures/route-linkage/**` は解析INPUT(AnalysisOutput JSON)。tsc/eslint 対象外(tests 配下)。
+- `src/backend-analysis/models.ts` は `isAnalysisOutput` 型ガードを公開していない(frontend のみ公開)。backend 入力の構造検証(4.2 の入力検証含む)では、backend-analysis を改変せず同等のローカル検証(`schemaVersion===1` + 必須配列4種)を route-linkage 側に書く。

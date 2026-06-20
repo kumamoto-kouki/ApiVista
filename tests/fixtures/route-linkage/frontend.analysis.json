@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "apiCalls": [
+    {
+      "method": "GET",
+      "urlPattern": "/api/users/{}",
+      "enclosingFunctionId": "composables/useUser:fetchUser",
+      "location": { "file": "composables/useUser.ts", "line": 6 }
+    },
+    {
+      "method": "GET",
+      "urlPattern": "/products",
+      "enclosingFunctionId": "composables/useProducts:fetchProducts",
+      "location": { "file": "composables/useProducts.ts", "line": 4 }
+    },
+    {
+      "method": "GET",
+      "urlPattern": "/orders/{}",
+      "enclosingFunctionId": "composables/useOrders:fetchOrder",
+      "location": { "file": "composables/useOrders.ts", "line": 9 }
+    },
+    {
+      "method": "POST",
+      "urlPattern": "/api/comments",
+      "enclosingFunctionId": "composables/useComments:postComment",
+      "location": { "file": "composables/useComments.ts", "line": 11 }
+    },
+    {
+      "method": "GET",
+      "urlPattern": "/{}",
+      "enclosingFunctionId": "composables/useCatchAll:fetchAny",
+      "location": { "file": "composables/useCatchAll.ts", "line": 3 }
+    }
+  ],
+  "functions": [
+    {
+      "id": "composables/useUser:fetchUser",
+      "name": "fetchUser",
+      "file": "composables/useUser.ts",
+      "location": { "file": "composables/useUser.ts", "line": 6 },
+      "calls": []
+    },
+    {
+      "id": "composables/useProducts:fetchProducts",
+      "name": "fetchProducts",
+      "file": "composables/useProducts.ts",
+      "location": { "file": "composables/useProducts.ts", "line": 4 },
+      "calls": []
+    },
+    {
+      "id": "composables/useOrders:fetchOrder",
+      "name": "fetchOrder",
+      "file": "composables/useOrders.ts",
+      "location": { "file": "composables/useOrders.ts", "line": 9 },
+      "calls": []
+    },
+    {
+      "id": "composables/useComments:postComment",
+      "name": "postComment",
+      "file": "composables/useComments.ts",
+      "location": { "file": "composables/useComments.ts", "line": 11 },
+      "calls": []
+    },
+    {
+      "id": "composables/useCatchAll:fetchAny",
+      "name": "fetchAny",
+      "file": "composables/useCatchAll.ts",
+      "location": { "file": "composables/useCatchAll.ts", "line": 3 },
+      "calls": []
+    },
+    {
+      "id": "shared:formatId",
+      "name": "formatId",
+      "file": "utils/shared.ts",
+      "location": { "file": "utils/shared.ts", "line": 1 },
+      "calls": []
+    }
+  ],
+  "files": [
+    { "id": "composables/useUser.ts", "path": "composables/useUser.ts", "dependsOn": [] },
+    { "id": "composables/useProducts.ts", "path": "composables/useProducts.ts", "dependsOn": [] },
+    { "id": "composables/useOrders.ts", "path": "composables/useOrders.ts", "dependsOn": [] },
+    { "id": "composables/useComments.ts", "path": "composables/useComments.ts", "dependsOn": [] },
+    { "id": "composables/useCatchAll.ts", "path": "composables/useCatchAll.ts", "dependsOn": [] },
+    { "id": "utils/shared.ts", "path": "utils/shared.ts", "dependsOn": [] }
+  ],
+  "warnings": [{ "target": "composables/useLegacy.ts", "reason": "dynamic-url-unsupported" }]
+}

@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/users/{id}",
+      "handler": { "file": "routers/users.py", "line": 10 },
+      "entryFunctionId": "routers.users:get_user",
+      "schemaRefs": [
+        {
+          "className": "UserOut",
+          "location": { "file": "schemas/user.py", "line": 5 },
+          "role": "response"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/users/{id}",
+      "handler": { "file": "routers/users.py", "line": 20 },
+      "entryFunctionId": "routers.users:delete_user",
+      "schemaRefs": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/products",
+      "handler": { "file": "routers/products.py", "line": 8 },
+      "entryFunctionId": "routers.products:list_products",
+      "schemaRefs": []
+    },
+    {
+      "method": "GET",
+      "path": "/v1/orders/{id}",
+      "handler": { "file": "routers/orders_v1.py", "line": 12 },
+      "entryFunctionId": "routers.orders_v1:get_order",
+      "schemaRefs": []
+    },
+    {
+      "method": "GET",
+      "path": "/v2/orders/{id}",
+      "handler": { "file": "routers/orders_v2.py", "line": 14 },
+      "entryFunctionId": "routers.orders_v2:get_order",
+      "schemaRefs": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/{id}",
+      "handler": { "file": "routers/catchall.py", "line": 3 },
+      "entryFunctionId": "routers.catchall:get_by_id",
+      "schemaRefs": []
+    }
+  ],
+  "functions": [
+    {
+      "id": "routers.users:get_user",
+      "name": "get_user",
+      "file": "routers/users.py",
+      "location": { "file": "routers/users.py", "line": 10 },
+      "calls": ["routers.users:get_user_helper"]
+    },
+    {
+      "id": "routers.users:get_user_helper",
+      "name": "get_user_helper",
+      "file": "routers/users.py",
+      "location": { "file": "routers/users.py", "line": 16 },
+      "calls": []
+    },
+    {
+      "id": "routers.users:delete_user",
+      "name": "delete_user",
+      "file": "routers/users.py",
+      "location": { "file": "routers/users.py", "line": 20 },
+      "calls": []
+    },
+    {
+      "id": "routers.products:list_products",
+      "name": "list_products",
+      "file": "routers/products.py",
+      "location": { "file": "routers/products.py", "line": 8 },
+      "calls": []
+    },
+    {
+      "id": "routers.orders_v1:get_order",
+      "name": "get_order",
+      "file": "routers/orders_v1.py",
+      "location": { "file": "routers/orders_v1.py", "line": 12 },
+      "calls": []
+    },
+    {
+      "id": "routers.orders_v2:get_order",
+      "name": "get_order",
+      "file": "routers/orders_v2.py",
+      "location": { "file": "routers/orders_v2.py", "line": 14 },
+      "calls": []
+    },
+    {
+      "id": "routers.catchall:get_by_id",
+      "name": "get_by_id",
+      "file": "routers/catchall.py",
+      "location": { "file": "routers/catchall.py", "line": 3 },
+      "calls": []
+    },
+    {
+      "id": "shared:formatId",
+      "name": "format_id",
+      "file": "utils/shared.py",
+      "location": { "file": "utils/shared.py", "line": 1 },
+      "calls": []
+    }
+  ],
+  "files": [
+    { "id": "routers/users.py", "path": "routers/users.py", "dependsOn": ["schemas/user.py"] },
+    { "id": "schemas/user.py", "path": "schemas/user.py", "dependsOn": [] },
+    { "id": "routers/products.py", "path": "routers/products.py", "dependsOn": [] },
+    { "id": "routers/orders_v1.py", "path": "routers/orders_v1.py", "dependsOn": [] },
+    { "id": "routers/orders_v2.py", "path": "routers/orders_v2.py", "dependsOn": [] },
+    { "id": "routers/catchall.py", "path": "routers/catchall.py", "dependsOn": [] },
+    { "id": "utils/shared.py", "path": "utils/shared.py", "dependsOn": [] }
+  ],
+  "warnings": [{ "target": "routers/legacy.py", "reason": "unsupported-decorator" }]
+}
