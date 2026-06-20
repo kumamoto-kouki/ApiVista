@@ -41,7 +41,7 @@
   - _Boundary: graphMerge_
 
 - [ ] 4. 統合: アセンブリ・公開API・CLI
-- [ ] 4.1 出力アセンブラ(assembleLinkage)を実装する
+- [x] 4.1 出力アセンブラ(assembleLinkage)を実装する
   - `MatchResult`・統合 functions/files・両入力 warnings を単一の `LinkageOutput`(`schemaVersion=1`)へ統合する。warnings は両入力 warnings + 診断を集約。**決定性**のため各配列を正準ソートする(linkages=apiCall位置→route method/path、unmatched*=規定キー、functions/files=id 昇順)
   - 観測可能な完了状態: linkage→route/apiCall→関数ノード→ファイルノードの参照が名前空間化IDで貫通し、warnings に両入力警告+診断が集約され、入力配列順を入れ替えても出力配列順が同一(決定的)であることを単体テストで確認できる
   - _Requirements: 5.1, 5.4, 5.5, 6.1, 6.3, 6.4, 7.3_
