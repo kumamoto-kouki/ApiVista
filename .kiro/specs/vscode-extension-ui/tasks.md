@@ -61,7 +61,7 @@
   - _Requirements: 3.2, 3.3, 4.2, 7.3_
   - _Boundary: webview/projectDepth_
 
-- [ ] 4.2 (P) depthSwitchControlを実装する
+- [x] 4.2 (P) depthSwitchControlを実装する
   - 3段階の深度切替UIを提示し選択変更時にコールバックで`Depth`を通知する
   - 観測可能な完了状態: jsdom単体テストで選択変更イベント発火時に正しい`Depth`がコールバックへ渡ることが確認できる
   - _Requirements: 4.1_
