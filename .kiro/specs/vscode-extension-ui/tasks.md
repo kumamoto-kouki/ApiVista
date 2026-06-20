@@ -20,7 +20,7 @@
   - _Requirements: 1.1, 2.1, 2.2, 2.5, 3.1, 6.1, 6.3_
 
 - [ ] 2. コア: ワークスペーススキャンと解析オーケストレーション
-- [ ] 2.1 (P) workspaceScannerを実装する
+- [x] 2.1 (P) workspaceScannerを実装する
   - 単一ワークスペースフォルダでない場合に`ScopeError`(multi-root)をthrowする
   - `backend/`不在時・`frontend/`不在時にそれぞれ`ScopeError`をthrowする
   - 検証成功時に`backendRoot`/`frontendRoot`の絶対パスを返す
