@@ -27,7 +27,7 @@
   - _Boundary: pathMatch_
 
 - [ ] 3. コア: 連携構築・グラフ統合
-- [ ] 3.1 連携マッチング(matchRoutes)を実装する
+- [x] 3.1 連携マッチング(matchRoutes)を実装する
   - 各 frontend `ApiCall` を全 backend `RouteDefinition` と照合し、`methodEquals` かつ `matchKind!=null` の一致を求める。**exact 優先**(その呼び出しに exact 一致があれば exact linkage のみ採用し、同呼び出しの suffix は抑制して診断記録)、exact が無ければ suffix linkage を採用(多重一致は全保持)。一致0の呼び出し/ルートを unmatched に分類。`RouteRef`/`ApiCallRef` の `entryFunctionId`/`enclosingFunctionId` は名前空間化し、`RouteRef.schemaRefs` を表示用付帯として格納(連携の絞り込みには使わない)。多重一致・suffix抑制・未連携を機械可読な診断 `Warning[]` に記録
   - 観測可能な完了状態: フィクスチャに対し、exact 単一一致→1 linkage、exact ありの呼び出しは suffix を出さない、exact 無し多重一致→複数 linkage 全保持、未連携 apiCall/route が unmatched に、純ワイルドカードは連携されない、診断が記録されることを単体テストで確認できる
   - _Requirements: 2.1, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2_
