@@ -15,5 +15,12 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "out", "dist", "src/**/*.test.ts", "src/**/__tests__/**"]
+  "exclude": [
+    "node_modules",
+    "out",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/__tests__/**",
+    "src/vscode-extension/test/**"
+  ]
 }

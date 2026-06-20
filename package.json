@@ -29,18 +29,22 @@
     "typecheck:tests": "tsc -p tsconfig.typecheck.json",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "rm -rf out-test-electron && tsc -p tsconfig.test-electron.json && node ./out-test-electron/vscode-extension/test/runTest.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/cytoscape": "^3.31.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.90.0",
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^9.0.0",
+    "glob": "^13.0.6",
     "jsdom": "^25.0.0",
+    "mocha": "^11.7.6",
     "prettier": "^3.0.0",
     "tree-sitter-wasms": "^0.1.13",
     "typescript": "^6.0.0",

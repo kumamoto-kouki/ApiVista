@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "out-test-electron",
+    "rootDir": "src"
+  },
+  "include": ["src/vscode-extension/test/**/*.ts"],
+  "exclude": ["node_modules", "out", "dist"]
+}

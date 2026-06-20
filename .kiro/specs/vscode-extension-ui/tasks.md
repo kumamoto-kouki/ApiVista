@@ -13,7 +13,7 @@
   - 観測可能な完了状態: 拡張ホスト側・Webview側双方からこの型をimportして`tsc`が型エラーなく完走する
   - _Requirements: 3.1, 5.1_
 
-- [ ] 1.3 統合テスト用フィクスチャワークスペースと@vscode/test-electron実行基盤を構築する
+- [x] 1.3 統合テスト用フィクスチャワークスペースと@vscode/test-electron実行基盤を構築する
   - `backend/`・`frontend/`を直下に持つ単一ルートのフィクスチャワークスペースを用意する(既存`tests/fixtures/sample_app`・`sample_nuxt`相当の構成を組み合わせる)
   - `@vscode/test-electron`のランナースクリプトとmochaベースのテストスイートエントリを構築し、`test:integration`スクリプトを追加する(現状`@vscode/test-electron`はdevDependencyとしてのみ存在し、ランナー・テストスイートは未配線のため新規構築する)
   - 観測可能な完了状態: `test:integration`スクリプトが実VSCodeを起動し、空のテストスイートが正常終了する
@@ -122,3 +122,5 @@
 - Webview側コード(`src/vscode-extension/webview/`)は`vscode`モジュールへの直接importを持たない(プラットフォーム制約上実行時にも不可能)。`webviewProtocol.ts`の型のみ拡張ホスト側と共有する。
 - `webview/main.ts`のCytoscape初期化はDOM/Canvas依存のため単体テスト対象外。目視確認(`/run`等)で検証する。
 - `tsconfig.json`の`exclude`(`src/**/*.test.ts`/`src/**/__tests__/**`)により、vitestテストファイルは`tsc -p tsconfig.json`では型チェックされない(vitestはesbuildでトランスパイルのみ・型チェックなし)。型の正しさをテストファイル経由で保証したい場合は`tsconfig.typecheck.json`(`noEmit:true`・テスト除外なしで`tsc`)+`npm run typecheck:tests`を使うこと(タスク1.2で新設)。
+- `@vscode/test-electron`系のtsconfig派生(`tsconfig.test-electron.json`)は **outDirを本番ビルド(`out/`)と必ず分離する**(`out-test-electron/`)こと。`extends`した子configの`exclude`は親の`exclude`を継承せず完全に上書きするため、子で`exclude`を再定義すると親の除外(`*.test.ts`等)が silently 復活し、同じ`outDir`を共有していると本番ビルドへ漏れ込む(タスク1.3でレビュー3回REJECTの原因)。さらに子configの`include`は対象を最小限に絞り(例: `src/vscode-extension/test/**/*.ts`のみ)、`npm run test:integration`相当のスクリプトには毎回`rm -rf <outDir>`の事前クリーンを入れること(plainな`tsc`は削除されたソースのコンパイル済み出力を自動で消さないため、stale出力が再実行され続ける)。
+- `tests/fixtures/vscode_workspace/{backend,frontend}/`は`sample_app`/`sample_nuxt`のコピーで構成した統合テスト専用フィクスチャワークスペース(単一ルート直下にbackend/frontendを持つ構成)。`@vscode/test-electron`のサンドボックス実行には環境依存の対応が必要だった: `libgtk-3.so.0`不足→`apt-get install libgtk-3-0`、ESM環境で`__dirname`不可→`fileURLToPath(import.meta.url)`、シェルの`ELECTRON_RUN_AS_NODE=1`がElectron起動を阻害→spawn前に`delete process.env.ELECTRON_RUN_AS_NODE`、root実行でサンドボックス不可→`process.getuid?.()===0`時のみ`--no-sandbox`付与。
