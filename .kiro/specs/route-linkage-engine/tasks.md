@@ -19,7 +19,7 @@
   - _Boundary: fixtures_
 
 - [ ] 2. コア: URLパス正規化・判定
-- [ ] 2.1 パスマッチング(canonicalize / methodEquals / matchKind)を実装する
+- [x] 2.1 パスマッチング(canonicalize / methodEquals / matchKind)を実装する
   - `canonicalize`(`/`分割・空除去・動的セグメント `{name}`/`{}` を `"{}"` へ畳む)、`methodEquals`(大文字一致)、`matchKind`(exact=全長一致かつ全セグメント segEq、suffix=短い方が長い方の末尾に segEq 整合 かつ **一致範囲にリテラル(非 `{}`)一致が1つ以上**=リテラル必須ガード、それ以外 null)を実装する
   - 観測可能な完了状態: `/api/users/{id}` と `/api/users/{}`=exact、`/users` と `/api/users`=suffix、純ワイルドカード末尾 `["{}"]`/`["{}","{}"]`=null、別パス/method 不一致=null を単体テストで確認できる
   - _Requirements: 2.1, 2.2, 2.3_
