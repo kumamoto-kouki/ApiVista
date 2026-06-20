@@ -44,7 +44,7 @@
   - _Requirements: 5.1, 5.2_
   - _Boundary: sourceJump_
 
-- [ ] 3.2 graphPanelを実装する
+- [x] 3.2 graphPanelを実装する
   - パネルが無ければ生成、既にあれば`reveal`するシングルトン管理を行う
   - CSP/nonce付きHTMLシェル(webviewHtml)を構築し、`media/webview`を`localResourceRoots`で許可する
   - `LinkageOutput`を`postMessage`で送信し、`nodeClick`受信時に`sourceJump`へ委譲する
