@@ -6,7 +6,7 @@
   - 観測可能な完了状態: `LinkageOutput` リテラルが型チェックを通り、`isLinkageOutput` が schemaVersion=1 と必須配列の有無を正しく判定することを単体テストで確認できる
   - _Requirements: 6.1, 6.2_
   - _Boundary: models_
-- [ ] 1.2 side 名前空間化ユーティリティを実装する
+- [x] 1.2 side 名前空間化ユーティリティを実装する
   - `namespaceId(side, id)` と、入力 `FunctionNode[]`/`FileNode[]` を `LinkedFunctionNode[]`/`LinkedFileNode[]` へ変換しつつ id・file・calls・dependsOn を一貫して名前空間化する `namespaceFunctions`/`namespaceFiles` を実装する
   - 観測可能な完了状態: backend/frontend 双方で同一 id が衝突する入力でも、名前空間化後に `backend:`/`frontend:` 接頭辞で一意になり、参照(calls/dependsOn/file)も同じ接頭辞で貫通することを単体テストで確認できる
   - _Requirements: 5.4, 5.6_
