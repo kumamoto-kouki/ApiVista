@@ -28,7 +28,7 @@
   - _Requirements: 2.1, 2.2, 2.5_
   - _Boundary: workspaceScanner_
 
-- [ ] 2.2 (P) analysisOrchestratorを実装する
+- [x] 2.2 (P) analysisOrchestratorを実装する
   - `analyzeBackend`(非同期)→`analyzeFrontend`(同期)→`linkRoutes`(同期)の順に呼び出す
   - いずれかがthrowした場合は`AnalysisError`でラップして伝播させる
   - 観測可能な完了状態: 単体テストで呼び出し順序・正常返却・`AnalysisError`ラップが確認できる
