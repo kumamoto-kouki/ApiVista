@@ -33,7 +33,7 @@
   - _Requirements: 2.1, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2_
   - _Depends: 1.2, 2.1_
   - _Boundary: matcher_
-- [ ] 3.2 (P) 呼び出しグラフ統合(mergeFunctions / mergeFiles)を実装する
+- [x] 3.2 (P) 呼び出しグラフ統合(mergeFunctions / mergeFiles)を実装する
   - backend/frontend 双方の `FunctionNode[]`/`FileNode[]` を `namespaceFunctions`/`namespaceFiles` で名前空間化して連結し、`side` 付きの統合 `LinkedFunctionNode[]`/`LinkedFileNode[]` を生成する
   - 観測可能な完了状態: 両側の関数/ファイルが統合配列に side 付きで含まれ、ID衝突しても一意で、calls/dependsOn が名前空間化IDで貫通することを単体テストで確認できる
   - _Requirements: 5.2, 5.3, 5.6_
