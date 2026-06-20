@@ -47,7 +47,7 @@
   - _Requirements: 5.1, 5.4, 5.5, 6.1, 6.3, 6.4, 7.3_
   - _Depends: 3.1, 3.2_
   - _Boundary: assemble_
-- [ ] 4.2 公開API(linkRoutes)を実装する
+- [x] 4.2 公開API(linkRoutes)を実装する
   - backend/frontend の `AnalysisOutput` を受け取り、入力検証(`schemaVersion=1`・必須配列。不正は throw)→ matchRoutes → mergeFunctions/mergeFiles → assembleLinkage を順に実行して単一 `LinkageOutput` を返す純粋・同期関数を実装する。対象コードは実行しない(静的・データのみ)
   - 観測可能な完了状態: フィクスチャ入力に対し単一 `LinkageOutput`(schemaVersion=1)を同期返却し、不正入力(schemaVersion 不一致・配列欠落)で throw、外部ランタイム無しで Node 上で完走することを単体テストで確認できる
   - _Requirements: 1.1, 1.2, 1.3, 6.1, 7.1, 7.2, 7.3_
