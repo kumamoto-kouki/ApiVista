@@ -14,7 +14,13 @@ import type {
   LinkedFunctionNode,
   RouteRef,
 } from "../../../route-linkage/models.js";
-import { projectDepth, type Depth, type GraphEdge, type GraphNode } from "../projectDepth.js";
+import {
+  findMatchingNodeIds,
+  projectDepth,
+  type Depth,
+  type GraphEdge,
+  type GraphNode,
+} from "../projectDepth.js";
 
 /** 全フィールドを持つ最小`LinkageOutput`を組み立てるヘルパー(各テストで必要な部分のみ上書き)。 */
 function buildOutput(overrides: Partial<LinkageOutput>): LinkageOutput {
@@ -379,5 +385,45 @@ describe("projectDepth", () => {
 
       expect(first).toEqual(second);
     });
+  });
+});
+
+describe("findMatchingNodeIds", () => {
+  function node(overrides: Partial<GraphNode> = {}): GraphNode {
+    return {
+      id: "n1",
+      kind: "route",
+      label: "GET /api/users/{id}",
+      unmatched: false,
+      ...overrides,
+    };
+  }
+
+  it("matches a route/apiCall node whose label contains the bare path as a substring", () => {
+    const nodes = [node({ id: "route:1", label: "GET /api/users/{id}" })];
+
+    expect(findMatchingNodeIds("/api/users/{id}", nodes)).toEqual(["route:1"]);
+  });
+
+  it("matches a file node whose label equals the warning target exactly", () => {
+    const nodes = [node({ id: "file:1", kind: "file", label: "routers/broken.py" })];
+
+    expect(findMatchingNodeIds("routers/broken.py", nodes)).toEqual(["file:1"]);
+  });
+
+  it("returns all matching node ids when multiple nodes share the same path", () => {
+    const nodes = [
+      node({ id: "route:1", label: "GET /api/users" }),
+      node({ id: "route:2", kind: "apiCall", label: "GET /api/users" }),
+      node({ id: "route:3", label: "GET /api/orders" }),
+    ];
+
+    expect(findMatchingNodeIds("/api/users", nodes)).toEqual(["route:1", "route:2"]);
+  });
+
+  it("returns an empty array when no node label contains the target", () => {
+    const nodes = [node({ id: "route:1", label: "GET /api/users" })];
+
+    expect(findMatchingNodeIds("/api/unknown", nodes)).toEqual([]);
   });
 });

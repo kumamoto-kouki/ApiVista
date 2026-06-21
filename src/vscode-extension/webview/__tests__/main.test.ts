@@ -84,9 +84,18 @@ const acquireVsCodeApiMock = vi.fn(() => ({ postMessage: postMessageMock }));
 
 const cyOnMock = vi.fn();
 const cyDestroyMock = vi.fn();
+const cyNodesRemoveClassMock = vi.fn();
+const cyNodesMock = vi.fn(() => ({ removeClass: cyNodesRemoveClassMock }));
+const cyGetElementByIdAddClassMock = vi.fn();
+const cyGetElementByIdMock = vi.fn(() => ({ addClass: cyGetElementByIdAddClassMock }));
 const cytoscapeMock = vi.fn((options: { elements: { data: { id: string } }[] }) => {
   void options;
-  return { on: cyOnMock, destroy: cyDestroyMock };
+  return {
+    on: cyOnMock,
+    destroy: cyDestroyMock,
+    nodes: cyNodesMock,
+    getElementById: cyGetElementByIdMock,
+  };
 });
 
 const renderWarningsMock = vi.fn();
@@ -161,6 +170,10 @@ describe("webview/main.ts", () => {
     cytoscapeMock.mockClear();
     cyOnMock.mockClear();
     cyDestroyMock.mockClear();
+    cyNodesMock.mockClear();
+    cyNodesRemoveClassMock.mockClear();
+    cyGetElementByIdMock.mockClear();
+    cyGetElementByIdAddClassMock.mockClear();
     renderWarningsMock.mockClear();
     createDepthSwitchControlMock.mockClear();
     capturedOnDepthChange = undefined;
@@ -305,5 +318,33 @@ describe("webview/main.ts", () => {
     };
     // depth remained "function" after re-analysis: nodes should be function-kind, not route-kind.
     expect(lastOptions.elements.some((element) => element.data.kind === "function")).toBe(true);
+  });
+
+  it("wires renderWarnings' onTargetHover to highlight matching nodes and clear on hover-out", async () => {
+    await import("../main.js");
+
+    const theRoute = route();
+    const output = buildOutput({
+      linkages: [{ route: theRoute, apiCall: apiCall(), matchKind: "exact" }],
+      warnings: [{ target: theRoute.path, reason: "unmatched-route" }],
+    });
+    dispatchLinkageData(output);
+
+    const onTargetHover = renderWarningsMock.mock.calls[0][2] as (target: string | null) => void;
+
+    onTargetHover(theRoute.path);
+
+    expect(cyNodesRemoveClassMock).toHaveBeenCalledWith("warning-highlight");
+    expect(cyGetElementByIdMock).toHaveBeenCalledWith(
+      `route:${theRoute.method}:${theRoute.path}:${theRoute.handler.file}:${theRoute.handler.line}`,
+    );
+    expect(cyGetElementByIdAddClassMock).toHaveBeenCalledWith("warning-highlight");
+
+    cyNodesRemoveClassMock.mockClear();
+    cyGetElementByIdAddClassMock.mockClear();
+    onTargetHover(null);
+
+    expect(cyNodesRemoveClassMock).toHaveBeenCalledWith("warning-highlight");
+    expect(cyGetElementByIdAddClassMock).not.toHaveBeenCalled();
   });
 });

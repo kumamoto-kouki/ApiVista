@@ -251,3 +251,17 @@ export function projectDepth(
       return projectFunctionDepth(output);
   }
 }
+
+/**
+ * `Warning.target`(route/apiCallの`path`/`urlPattern`、もしくはファイルパス)に対応する
+ * `GraphNode`のid集合を返す(警告一覧ホバー時のグラフ強調表示用)。
+ *
+ * `target`はノードのid自体ではなく(route/apiCallノードのidはmethod+位置情報を含む合成id、
+ * fileノードのidはengine側で生成された不透明id)、`label`に部分文字列として現れる元の
+ * パス文字列のため、`label.includes(target)`での部分一致をマッチング基準とする
+ * (file深度: labelがfile.pathそのものなので完全一致相当になる。route深度:
+ * labelは`"METHOD path"`の形のため`target`(pathのみ)が部分文字列として一致する)。
+ */
+export function findMatchingNodeIds(target: string, nodes: readonly GraphNode[]): string[] {
+  return nodes.filter((node) => node.label.includes(target)).map((node) => node.id);
+}

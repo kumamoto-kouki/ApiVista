@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Warning } from "../../../route-linkage/models.js";
 import { renderWarnings } from "../warningsPanel.js";
@@ -85,6 +85,32 @@ describe("renderWarnings", () => {
       expect(text).not.toContain(warning.target);
       expect(text).not.toContain(warning.reason);
     }
+  });
+
+  it("calls onTargetHover with the warning's target on mouseenter and null on mouseleave", () => {
+    const container = createContainer();
+    const warnings: Warning[] = [{ target: "api-1", reason: "schema mismatch" }];
+    const onTargetHover = vi.fn();
+
+    renderWarnings(container, warnings, onTargetHover);
+
+    const item = container.querySelector("li");
+    expect(item).not.toBeNull();
+    item?.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(onTargetHover).toHaveBeenLastCalledWith("api-1");
+
+    item?.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(onTargetHover).toHaveBeenLastCalledWith(null);
+  });
+
+  it("does not throw when no onTargetHover is provided and a warning item is hovered", () => {
+    const container = createContainer();
+    const warnings: Warning[] = [{ target: "api-1", reason: "schema mismatch" }];
+
+    renderWarnings(container, warnings);
+
+    const item = container.querySelector("li");
+    expect(() => item?.dispatchEvent(new MouseEvent("mouseenter"))).not.toThrow();
   });
 
   it("does not assign to .innerHTML anywhere in the implementation source", () => {
