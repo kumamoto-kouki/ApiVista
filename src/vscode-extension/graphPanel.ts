@@ -45,6 +45,7 @@ function handleNodeClick(
 function createPanel(
   context: GraphPanelContext,
   initialOutput: LinkageOutput,
+  onDidDispose?: () => void,
 ): vscode.WebviewPanel {
   const localResourceRoot = vscode.Uri.joinPath(context.extensionUri, "media", "webview");
 
@@ -69,6 +70,7 @@ function createPanel(
     if (currentPanel === panel) {
       currentPanel = undefined;
     }
+    onDidDispose?.();
   });
 
   return panel;
@@ -77,14 +79,24 @@ function createPanel(
 /**
  * グラフ表示コマンド実行時のエントリ。パネルが無ければ生成し初回`linkageData`送信を準備、
  * 既にあれば`reveal()`のみを行う（既存パネルへの新規データ送信は`postLinkageUpdate`の責務）。
+ *
+ * `onDidDispose`はパネルが**新規生成**された場合のみ、そのパネルの`onDidDispose`発火時に呼ばれる
+ * （`reveal()`分岐では既存パネルのライフサイクルに変更がないため呼ばれない）。`extension.ts`が
+ * パネル生成と対になる`reanalysisWatcher`の起動/破棄を結線するためのフックとして追加した
+ * （design.mdの`graphPanel`自体はwatcherのライフサイクル管理を持たないため、本コールバックは
+ * `showOrReveal`の戻り値を持たせない最小限の追加で済ませた）。
  */
-export function showOrReveal(context: GraphPanelContext, initialOutput: LinkageOutput): void {
+export function showOrReveal(
+  context: GraphPanelContext,
+  initialOutput: LinkageOutput,
+  onDidDispose?: () => void,
+): void {
   if (currentPanel) {
     currentPanel.reveal();
     return;
   }
 
-  currentPanel = createPanel(context, initialOutput);
+  currentPanel = createPanel(context, initialOutput, onDidDispose);
 }
 
 /**

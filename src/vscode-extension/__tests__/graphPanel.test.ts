@@ -227,6 +227,43 @@ describe("graphPanel.showOrReveal", () => {
     expect(createWebviewPanelMock).toHaveBeenCalledTimes(2);
     expect(secondPanel.reveal).not.toHaveBeenCalled();
   });
+
+  it("新規パネル生成時に渡したonDidDisposeコールバックは、パネルのonDidDispose発火時に呼ばれる", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+    const onDidDispose = vi.fn();
+
+    const { showOrReveal } = await import("../graphPanel.js");
+
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, makeLinkageOutput(), onDidDispose);
+
+    expect(onDidDispose).not.toHaveBeenCalled();
+
+    const onDisposeHandler = panel.onDidDispose.mock.calls[0][0] as () => void;
+    onDisposeHandler();
+
+    expect(onDidDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("既存パネルをreveal()する分岐では、渡されたonDidDisposeコールバックは呼ばれない(新規生成時のみ結線される)", async () => {
+    const firstPanel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(firstPanel);
+    const firstOnDidDispose = vi.fn();
+    const secondOnDidDispose = vi.fn();
+
+    const { showOrReveal } = await import("../graphPanel.js");
+
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, makeLinkageOutput(), firstOnDidDispose);
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, makeLinkageOutput(), secondOnDidDispose);
+
+    expect(firstPanel.onDidDispose).toHaveBeenCalledTimes(1);
+
+    const onDisposeHandler = firstPanel.onDidDispose.mock.calls[0][0] as () => void;
+    onDisposeHandler();
+
+    expect(firstOnDidDispose).toHaveBeenCalledTimes(1);
+    expect(secondOnDidDispose).not.toHaveBeenCalled();
+  });
 });
 
 describe("graphPanel.postLinkageUpdate", () => {

@@ -81,7 +81,7 @@
   - _Depends: 2.2_
   - _Boundary: reanalysisWatcher_
 
-- [ ] 6. extension.tsでアクティベーション・コマンド登録・全コンポーネントの結線を行う
+- [x] 6. extension.tsでアクティベーション・コマンド登録・全コンポーネントの結線を行う
   - activate時に`apivista.showGraph`/`apivista.reanalyze`を登録する
   - `showGraph`実行時に`workspaceScanner`→`withProgress`表示→`analysisOrchestrator`→`graphPanel`生成→`reanalysisWatcher`起動の順で結線する
   - `reanalyze`実行時は`analysisOrchestrator`を再実行し既存パネルを更新する
@@ -125,3 +125,5 @@
 - `@vscode/test-electron`系のtsconfig派生(`tsconfig.test-electron.json`)は **outDirを本番ビルド(`out/`)と必ず分離する**(`out-test-electron/`)こと。`extends`した子configの`exclude`は親の`exclude`を継承せず完全に上書きするため、子で`exclude`を再定義すると親の除外(`*.test.ts`等)が silently 復活し、同じ`outDir`を共有していると本番ビルドへ漏れ込む(タスク1.3でレビュー3回REJECTの原因)。さらに子configの`include`は対象を最小限に絞り(例: `src/vscode-extension/test/**/*.ts`のみ)、`npm run test:integration`相当のスクリプトには毎回`rm -rf <outDir>`の事前クリーンを入れること(plainな`tsc`は削除されたソースのコンパイル済み出力を自動で消さないため、stale出力が再実行され続ける)。
 - `tests/fixtures/vscode_workspace/{backend,frontend}/`は`sample_app`/`sample_nuxt`のコピーで構成した統合テスト専用フィクスチャワークスペース(単一ルート直下にbackend/frontendを持つ構成)。`@vscode/test-electron`のサンドボックス実行には環境依存の対応が必要だった: `libgtk-3.so.0`不足→`apt-get install libgtk-3-0`、ESM環境で`__dirname`不可→`fileURLToPath(import.meta.url)`、シェルの`ELECTRON_RUN_AS_NODE=1`がElectron起動を阻害→spawn前に`delete process.env.ELECTRON_RUN_AS_NODE`、root実行でサンドボックス不可→`process.getuid?.()===0`時のみ`--no-sandbox`付与。
 - `import type`のみで参照しているモジュールへの相対パスが1階層ズレていても、vitest(esbuildのtranspile-onlyモード)は`import type`をコンパイル前に消去するため**実行時エラーにならずテストは緑のまま**になる(タスク4.1で発覚)。型のみimportを含むファイルを変更した際は、`vitest run`が通っても`npx tsc -p tsconfig.json --noEmit`(および`npm run typecheck:tests`)を必ず実行してパス解決を検証すること。
+- `graphPanel.ts`の`showOrReveal`に`onDidDispose?`を追加(タスク6で`reanalysisWatcher`のライフサイクルをパネルに結びつけるための統合変更、既存シングルトン管理ロジックは無変更)。コンポーネントのライフサイクルを別コンポーネントに結びつける必要がある統合タスクでは、既存の承認済みコンポーネントへの**最小限・後方互換な追加**(オプション引数等)は妥当な対応であり、既存テストの再実行で無回帰を確認すること。
+- `vi.fn().mockReturnValue(obj)`は呼び出し毎に同一オブジェクト参照を返すため、「2回目以降の呼び出しで別インスタンスが生成され誤った参照がdisposeされる」というクラスのリグレッションをテストが検出できない盲点になりうる(タスク6で発覚、reviewerがmutationテストで検出)。複数回呼ばれる可能性のあるファクトリ関数をモックする際は、`mockImplementation(() => 新規オブジェクト)`で呼び出し毎に別インスタンスを返すようにし、「同一インスタンスが再利用されている」ことを積極的に検証すること。
