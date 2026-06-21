@@ -1,0 +1,6 @@
+This fixture intentionally has no sibling `backend/` directory.
+
+Used by src/vscode-extension/test/suite/showGraphErrors.test.ts (task 8.3) to
+verify workspaceScanner.validate() rejects with ScopeError("missing-backend")
+before any analysis (analyzeFrontend etc.) is attempted. Content here is never
+read by the extension under test, since validation fails before analysis.

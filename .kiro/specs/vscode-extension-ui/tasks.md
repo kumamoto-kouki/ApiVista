@@ -107,7 +107,7 @@
   - 観測可能な完了状態: テスト実行でパネルが生成されエラーが発生せず、外部ランタイム無しでNode/Electronのみで完走することを確認できる
   - _Requirements: 2.1, 3.1, 8.1, 8.2_
 
-- [ ] 8.3 異常系(backend/frontend不在・マルチルート)の統合テストを追加する
+- [x] 8.3 異常系(backend/frontend不在・マルチルート)の統合テストを追加する
   - 観測可能な完了状態: `showErrorMessage`が呼ばれグラフパネルが生成されないことを確認できる
   - _Requirements: 2.2, 2.5_
 
@@ -129,3 +129,4 @@
 - `vi.fn().mockReturnValue(obj)`は呼び出し毎に同一オブジェクト参照を返すため、「2回目以降の呼び出しで別インスタンスが生成され誤った参照がdisposeされる」というクラスのリグレッションをテストが検出できない盲点になりうる(タスク6で発覚、reviewerがmutationテストで検出)。複数回呼ばれる可能性のあるファクトリ関数をモックする際は、`mockImplementation(() => 新規オブジェクト)`で呼び出し毎に別インスタンスを返すようにし、「同一インスタンスが再利用されている」ことを積極的に検証すること。
 - `npm run test:integration`は元々`npm run build`を経由せず`out/`(本番ビルド)を再生成しなかったため、ソース変更後にリビルドを忘れると古い`out/vscode-extension/extension.js`に対してテストが偽の成功を返しうる(タスク8.1のレビューでmutation testが最初に偽陰性になったことで発覚)。`test:integration`スクリプトに`npm run build`を追加して修正済み。統合テストの結果を信頼する前提条件として、このスクリプトが常にリビルドしてから実行することを保証しておくこと。
 - `@vscode/test-electron`統合テストで`vscode.window.createWebviewPanel(...)`呼び出し後に`vscode.window.tabGroups.all`を即座に検査すると、コマンドハンドラのPromiseが解決していても空配列が返ることがある(レンダラー側のタブUI反映が拡張ホスト側の`createWebviewPanel()`呼び出し完了より遅延するため)。パネル生成を検証する統合テストでは、固定`sleep`ではなく短いポーリング間隔+タイムアウト(例: 100ms間隔・5秒タイムアウト)でタブの出現を待つこと(タスク8.2で発覚)。
+- `vscode.workspace.updateWorkspaceFolders(...)`は、先頭フォルダの変更や単一→マルチルートの遷移を行うと**拡張ホストプロセス自体を再起動する**(`@types/vscode`のドキュメントコメントに明記)。`@vscode/test-electron`の1つの`runTests()`セッション内で複数スペックを実行する統合テストでは、異常系(backend/frontend不在・マルチルート等)のワークスペース構成を一時的にシミュレートする際にこのAPIを使うとMochaスイート全体が壊れる。代わりに`Object.defineProperty(vscode.workspace, "workspaceFolders", { get: () => ... })`で`workspaceFolders`プロパティ自体を一時的にモンキーパッチし、`afterEach`で必ず元の値に復元すること(同様に`vscode.window.showErrorMessage`も同じ手法でモンキーパッチしてエラー表示の検証に使える。実VSCode拡張ホスト上のテストはプロダクションコードと同一プロセス・モジュール名前空間で動くため、この手法が成立する。タスク8.3で発覚)。
