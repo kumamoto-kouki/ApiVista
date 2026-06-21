@@ -73,7 +73,7 @@
   - _Requirements: 7.1_
   - _Boundary: webview/warningsPanel_
 
-- [ ] 5. (P) reanalysisWatcherを実装する
+- [x] 5. (P) reanalysisWatcherを実装する
   - グラフパネル生成時に`backend/`・`frontend/`配下の`FileSystemWatcher`を開始し、パネル破棄時に`dispose`する
   - 短時間内の連続保存イベントを1回の再解析に集約する(debounce)
   - 観測可能な完了状態: フェイクタイマーを用いた単体テストで複数イベントの1回集約と`dispose`後の非発火が確認できる
