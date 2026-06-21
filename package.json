@@ -30,7 +30,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:integration": "rm -rf out-test-electron && tsc -p tsconfig.test-electron.json && node ./out-test-electron/vscode-extension/test/runTest.js"
+    "test:integration": "rm -rf out-test-electron && npm run build && tsc -p tsconfig.test-electron.json && node ./out-test-electron/vscode-extension/test/runTest.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
