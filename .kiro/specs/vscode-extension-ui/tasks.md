@@ -111,7 +111,7 @@
   - 観測可能な完了状態: `showErrorMessage`が呼ばれグラフパネルが生成されないことを確認できる
   - _Requirements: 2.2, 2.5_
 
-- [ ] 8.4 保存時自動再解析の統合テストを追加する
+- [x] 8.4 保存時自動再解析の統合テストを追加する
   - パネル表示中に`backend/`配下のファイルを変更保存し再解析が走り表示が更新されることを検証する
   - 観測可能な完了状態: 保存後に`graphPanel`へ新しい`LinkageOutput`が渡ることを確認できる
   - _Requirements: 6.1, 6.3_
@@ -130,3 +130,5 @@
 - `npm run test:integration`は元々`npm run build`を経由せず`out/`(本番ビルド)を再生成しなかったため、ソース変更後にリビルドを忘れると古い`out/vscode-extension/extension.js`に対してテストが偽の成功を返しうる(タスク8.1のレビューでmutation testが最初に偽陰性になったことで発覚)。`test:integration`スクリプトに`npm run build`を追加して修正済み。統合テストの結果を信頼する前提条件として、このスクリプトが常にリビルドしてから実行することを保証しておくこと。
 - `@vscode/test-electron`統合テストで`vscode.window.createWebviewPanel(...)`呼び出し後に`vscode.window.tabGroups.all`を即座に検査すると、コマンドハンドラのPromiseが解決していても空配列が返ることがある(レンダラー側のタブUI反映が拡張ホスト側の`createWebviewPanel()`呼び出し完了より遅延するため)。パネル生成を検証する統合テストでは、固定`sleep`ではなく短いポーリング間隔+タイムアウト(例: 100ms間隔・5秒タイムアウト)でタブの出現を待つこと(タスク8.2で発覚)。
 - `vscode.workspace.updateWorkspaceFolders(...)`は、先頭フォルダの変更や単一→マルチルートの遷移を行うと**拡張ホストプロセス自体を再起動する**(`@types/vscode`のドキュメントコメントに明記)。`@vscode/test-electron`の1つの`runTests()`セッション内で複数スペックを実行する統合テストでは、異常系(backend/frontend不在・マルチルート等)のワークスペース構成を一時的にシミュレートする際にこのAPIを使うとMochaスイート全体が壊れる。代わりに`Object.defineProperty(vscode.workspace, "workspaceFolders", { get: () => ... })`で`workspaceFolders`プロパティ自体を一時的にモンキーパッチし、`afterEach`で必ず元の値に復元すること(同様に`vscode.window.showErrorMessage`も同じ手法でモンキーパッチしてエラー表示の検証に使える。実VSCode拡張ホスト上のテストはプロダクションコードと同一プロセス・モジュール名前空間で動くため、この手法が成立する。タスク8.3で発覚)。
+- **(タスク8.4で発覚・修正済みの本番バグ)** `extension.ts`の`runShowGraph`が`graphPanel.showOrReveal`の戻り値を見ずに毎回`createReanalysisWatcher()`を生成・起動していたため、パネルが既に開いている状態で`apivista.showGraph`を再実行すると(ごく普通のユーザー操作)、新しいwatcherが生成される一方でその`dispose()`はどのパネルの`onDidDispose`にも結線されず`FileSystemWatcher`がリークし、以後のファイル保存ごとに複数のwatcherが並行して再解析・`postLinkageUpdate`を行う不具合があった。`showOrReveal`の戻り値を`void`から`boolean`(true=新規パネル生成、false=既存パネルreveal)に変更し、`extension.ts`は`true`の場合のみwatcherを生成・起動するよう修正した。design.mdのService Interfaceに記載された「`start`はパネル生成時に1回のみ呼ばれる」という前提条件をコード側で機械的に保証する必要がある場合、対象APIの戻り値で生成有無を呼び出し元へ伝える設計が有効。
+- **(タスク8.4で発覚・修正済みのharness不具合)** `runTest.ts`が`--user-data-dir`を指定していなかったため、`.vscode-test/user-data`の永続プロファイルのウィンドウ復元機能により`npm run test:integration`の1回の実行で**約7個の拡張ホストプロセスが並行起動**し、同一フィクスチャファイルへ競合書き込みすることでテストの非決定性・fixture汚染を引き起こしていた(タスク8.1〜8.3のレビューで観測された原因不明のログノイズ・間欠的失敗の主要因だったと判明)。`runTest.ts`で`mkdtempSync`による一意な一時ディレクトリを毎回`--user-data-dir`に指定し、`finally`で削除するよう修正(`process.exit()`は`finally`完了後に呼ぶよう順序に注意すること、`finally`内で同期的に`process.exit`すると後続のクリーンアップ処理がスキップされる)。`@vscode/test-electron`を使う統合テストでは**必ず`--user-data-dir`を分離する**こと。

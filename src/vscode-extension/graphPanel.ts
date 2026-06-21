@@ -82,21 +82,25 @@ function createPanel(
  *
  * `onDidDispose`はパネルが**新規生成**された場合のみ、そのパネルの`onDidDispose`発火時に呼ばれる
  * （`reveal()`分岐では既存パネルのライフサイクルに変更がないため呼ばれない）。`extension.ts`が
- * パネル生成と対になる`reanalysisWatcher`の起動/破棄を結線するためのフックとして追加した
- * （design.mdの`graphPanel`自体はwatcherのライフサイクル管理を持たないため、本コールバックは
- * `showOrReveal`の戻り値を持たせない最小限の追加で済ませた）。
+ * パネル生成と対になる`reanalysisWatcher`の起動/破棄を結線するためのフックとして追加した。
+ *
+ * 戻り値は新規パネルを生成した場合は`true`、既存パネルを`reveal()`しただけの場合は`false`を返す。
+ * design.md「`start`はパネル生成時に1回のみ呼ばれる」(reanalysisWatcherのPreconditions)を
+ * `extension.ts`側で守らせるために追加した最小限の戻り値であり、`onDidDispose`コールバックの
+ * 結線・発火条件自体は変更していない。
  */
 export function showOrReveal(
   context: GraphPanelContext,
   initialOutput: LinkageOutput,
   onDidDispose?: () => void,
-): void {
+): boolean {
   if (currentPanel) {
     currentPanel.reveal();
-    return;
+    return false;
   }
 
   currentPanel = createPanel(context, initialOutput, onDidDispose);
+  return true;
 }
 
 /**

@@ -131,6 +131,9 @@ describe("extension.activate", () => {
     validateMock.mockReset();
     analyzeMock.mockReset();
     showOrRevealMock.mockReset();
+    // デフォルトは新規パネル生成(true)。既存パネルのreveal(false)を検証するテストは
+    // 個別にmockReturnValueOnceで上書きする。
+    showOrRevealMock.mockReturnValue(true);
     postLinkageUpdateMock.mockReset();
     createReanalysisWatcherMock.mockReset();
     makeWithProgressRunTask();
@@ -323,6 +326,31 @@ describe("extension.activate", () => {
     onDidDispose();
 
     expect(watcher.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("showGraphを2回連続で実行し、2回目でshowOrRevealがfalse(既存パネルのreveal)を返した場合、createReanalysisWatcherは1回しか呼ばれない", async () => {
+    const scanned = { backendRoot: BACKEND_ROOT, frontendRoot: FRONTEND_ROOT };
+    validateMock.mockReturnValue(scanned);
+    analyzeMock.mockResolvedValue(makeLinkageOutput());
+    const firstWatcher = makeFakeWatcher();
+    const secondWatcher = makeFakeWatcher();
+    createReanalysisWatcherMock
+      .mockReturnValueOnce(firstWatcher)
+      .mockReturnValueOnce(secondWatcher);
+    showOrRevealMock.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const { activate } = await import("../extension.js");
+    const context = makeFakeContext();
+    activate(context as never);
+
+    const handler = getRegisteredHandler("apivista.showGraph");
+    await handler();
+    await handler();
+
+    expect(createReanalysisWatcherMock).toHaveBeenCalledTimes(1);
+    expect(showOrRevealMock).toHaveBeenCalledTimes(2);
+    expect(firstWatcher.start).toHaveBeenCalledTimes(1);
+    expect(secondWatcher.start).not.toHaveBeenCalled();
   });
 
   it("showGraph成功時、watcher.startのonReanalyzedコールバックはgraphPanel.postLinkageUpdateを呼ぶ", async () => {

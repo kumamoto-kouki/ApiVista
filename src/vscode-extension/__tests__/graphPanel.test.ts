@@ -148,6 +148,22 @@ describe("graphPanel.showOrReveal", () => {
     expect(panel.reveal).toHaveBeenCalledTimes(1);
   });
 
+  it("新規パネル生成時はtrueを返し、パネルが開いたままの2回目の呼び出し(reveal分岐)はfalseを返す", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+
+    const { showOrReveal } = await import("../graphPanel.js");
+
+    const firstResult = showOrReveal({ extensionUri: EXTENSION_URI } as never, makeLinkageOutput());
+    const secondResult = showOrReveal(
+      { extensionUri: EXTENSION_URI } as never,
+      makeLinkageOutput(),
+    );
+
+    expect(firstResult).toBe(true);
+    expect(secondResult).toBe(false);
+  });
+
   it("Webviewから'ready'メッセージを受信すると、postMessageでlinkageDataを初期出力とともに送信する", async () => {
     const panel = makeFakePanel();
     createWebviewPanelMock.mockReturnValue(panel);

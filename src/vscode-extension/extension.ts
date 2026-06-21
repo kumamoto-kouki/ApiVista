@@ -21,9 +21,14 @@
  *   既存表示は自然に保持される)。
  * - `reanalysisWatcher`のライフサイクルは「`showGraph`でパネルが新規生成された時点で開始し、その
  *   パネルが破棄された時点で同一インスタンスを破棄する」一対一の関係を保つ必要がある
- *   (research.md「ファイル監視はグラフパネルを開いている間のみ稼働させる」)。`graphPanel.showOrReveal`
+ *   (research.md「ファイル監視はグラフパネルを開いている間のみ稼働させる」、design.md
+ *   reanalysisWatcherのPreconditions「`start`はパネル生成時に1回のみ呼ばれる」)。`graphPanel.showOrReveal`
  *   の第3引数`onDidDispose`コールバックは新規パネル生成時のみ呼ばれるため、このコールバック内で
  *   `createReanalysisWatcher()`が返した同一インスタンスの`dispose()`を呼ぶようにクロージャで束縛する。
+ *   `showOrReveal`の戻り値が`false`（既存パネルを`reveal()`しただけ）の場合は新しいwatcherを
+ *   生成・起動しない。既存パネルに紐づく既存watcherがそのパネルの再解析ライフサイクルを継続して
+ *   担うため、ここで何もしないことが正しい（生成すると同一パネルに対し複数のwatcherが並行稼働し、
+ *   古いwatcherの`FileSystemWatcher`がリークしたまま二重に再解析・`postLinkageUpdate`される）。
  * - `deactivate`は拡張終了時の安全網として、最後にアクティブだったwatcherが残っていれば`dispose()`する
  *   (パネルが開いたままVSCodeが終了する場合に備える。通常はパネルの`onDidDispose`で先に破棄される)。
  */
@@ -69,17 +74,27 @@ async function runShowGraph(context: vscode.ExtensionContext): Promise<void> {
     return;
   }
 
-  const watcher = createReanalysisWatcher();
-  graphPanel.showOrReveal({ extensionUri: context.extensionUri }, output, () => {
-    watcher.dispose();
-    if (activeWatcher === watcher) {
+  // `onDidDispose`コールバックは新規パネル生成時のみ発火するため、その時点で初めて
+  // `createReanalysisWatcher()`が返した同一インスタンスを束縛できればよい。`showOrReveal`が
+  // 既存パネルをreveal()しただけ(false)の場合はこのコールバック自体が発火しないため、
+  // `watcherRef.current`への代入は新規パネル生成時にのみ意味を持つ。
+  const watcherRef: { current: ReanalysisWatcher | undefined } = { current: undefined };
+  const isNewPanel = graphPanel.showOrReveal({ extensionUri: context.extensionUri }, output, () => {
+    watcherRef.current?.dispose();
+    if (activeWatcher === watcherRef.current) {
       activeWatcher = undefined;
     }
   });
-  watcher.start(backendRoot, frontendRoot, (newOutput) => {
+  if (!isNewPanel) {
+    return;
+  }
+
+  const newWatcher = createReanalysisWatcher();
+  watcherRef.current = newWatcher;
+  newWatcher.start(backendRoot, frontendRoot, (newOutput) => {
     graphPanel.postLinkageUpdate(newOutput);
   });
-  activeWatcher = watcher;
+  activeWatcher = newWatcher;
 }
 
 async function runReanalyze(): Promise<void> {
