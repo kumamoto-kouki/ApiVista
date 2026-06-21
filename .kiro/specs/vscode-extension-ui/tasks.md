@@ -67,7 +67,7 @@
   - _Requirements: 4.1_
   - _Boundary: webview/depthSwitchControl_
 
-- [ ] 4.3 (P) warningsPanelを実装する
+- [x] 4.3 (P) warningsPanelを実装する
   - `Warning[]`の件数・内容を一覧表示する
   - 観測可能な完了状態: jsdom単体テストで0件/複数件それぞれの表示内容が確認できる
   - _Requirements: 7.1_
