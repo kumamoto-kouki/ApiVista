@@ -89,7 +89,7 @@
   - 観測可能な完了状態: 単体テストで`showGraph`コマンド実行時の各コンポーネント呼び出し順序、`ScopeError`(backend/frontend不在・マルチルート)発生時の`showErrorMessage`呼び出しと後続処理停止、`AnalysisError`発生時の同様の挙動が確認できる(vscode APIはモック)
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 2.4, 2.5, 6.2, 7.2_
 
-- [ ] 7. webview/main.tsでWebviewエントリの結線とCytoscape描画を実装する
+- [x] 7. webview/main.tsでWebviewエントリの結線とCytoscape描画を実装する
   - `acquireVsCodeApi`を1度だけ呼び出し`ready`メッセージ送信後に`linkageData`を受信してCytoscapeで初期描画する
   - `projectDepth`/`depthSwitchControl`/`warningsPanel`を結線する
   - ノードクリック時に`sourceLocation`を含む`nodeClick`メッセージをホストへ送信する
