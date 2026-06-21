@@ -48,12 +48,24 @@ const appRoot = document.getElementById("app") ?? document.body;
 
 const depthSwitchContainer = document.createElement("div");
 depthSwitchContainer.id = "depth-switch";
+depthSwitchContainer.style.flexShrink = "0";
 
 const warningsContainer = document.createElement("div");
 warningsContainer.id = "warnings";
+warningsContainer.style.flexShrink = "0";
+warningsContainer.style.maxHeight = "40%";
+warningsContainer.style.overflowY = "auto";
 
+// `#app`(webviewHtml.ts側で`display:flex; flex-direction:column; height:100%`を付与済み)の
+// 残り領域をグラフ表示に充てる。Cytoscapeはコンテナの実際のサイズを読んで初期化するため、
+// 明示的な高さ(`flex: 1 1 auto` + `minHeight`)が無いとコンテナの高さが0pxに崩れ、要素は
+// 生成されても何も見えない状態になる(実機検証で発見)。`position: relative`もCytoscape自身が
+// 警告するUI拡張機能の前提条件。
 const graphContainer = document.createElement("div");
 graphContainer.id = "graph";
+graphContainer.style.flex = "1 1 auto";
+graphContainer.style.minHeight = "300px";
+graphContainer.style.position = "relative";
 
 appRoot.appendChild(depthSwitchContainer);
 appRoot.appendChild(warningsContainer);
