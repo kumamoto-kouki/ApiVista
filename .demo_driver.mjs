@@ -59,17 +59,22 @@ async function main() {
 
   if (webviewFrame) {
     console.log("=== Step 3: 深度切替 → ファイル単位 (エッジ色/レイアウト確認) ===");
-    await webviewFrame.locator("#depth-switch select").selectOption("file");
+    await webviewFrame.locator('button[data-value="file"]').click();
     await new Promise((r) => setTimeout(r, 1500));
     await shot(page, "02-graph-file-depth-breadthfirst");
 
-    console.log("=== Step 4: 警告項目にホバー → グラフノードのハイライト確認 ===");
-    await webviewFrame.locator("#depth-switch select").selectOption("route");
+    console.log("=== Step 4: 警告オーバーレイの確認 ===");
+    await webviewFrame.locator('button[data-value="route"]').click();
     await new Promise((r) => setTimeout(r, 1500));
-    const targetWarningItem = webviewFrame.locator("#warnings li", { hasText: "/api/widgets" });
-    await targetWarningItem.hover();
-    await new Promise((r) => setTimeout(r, 1000));
-    await shot(page, "03-warning-hover-highlight");
+    await shot(page, "03-warning-overlay-route");
+    // 警告オーバーレイが存在すればホバー確認
+    const overlayCount = await webviewFrame.locator(".warning-overlay").count();
+    console.log("warning-overlay count:", overlayCount);
+    if (overlayCount > 0) {
+      await webviewFrame.locator(".warning-overlay").first().hover();
+      await new Promise((r) => setTimeout(r, 1000));
+      await shot(page, "04-warning-overlay-hover");
+    }
   }
 
   await new Promise((r) => setTimeout(r, 1000));

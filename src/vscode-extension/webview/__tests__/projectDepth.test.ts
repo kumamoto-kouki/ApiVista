@@ -113,8 +113,8 @@ describe("projectDepth", () => {
 
       expect(edges).toHaveLength(1);
       expect(edges[0].kind).toBe("linkage");
-      expect(edges[0].source).toBe(routeNode?.id);
-      expect(edges[0].target).toBe(apiCallNode?.id);
+      expect(edges[0].source).toBe(apiCallNode?.id);
+      expect(edges[0].target).toBe(routeNode?.id);
 
       assertReferentialIntegrity(nodes, edges);
     });
@@ -393,6 +393,7 @@ describe("findMatchingNodeIds", () => {
     return {
       id: "n1",
       kind: "route",
+      side: "backend",
       label: "GET /api/users/{id}",
       unmatched: false,
       ...overrides,

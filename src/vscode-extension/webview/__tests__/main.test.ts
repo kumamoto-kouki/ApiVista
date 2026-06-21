@@ -83,22 +83,33 @@ const postMessageMock = vi.fn();
 const acquireVsCodeApiMock = vi.fn(() => ({ postMessage: postMessageMock }));
 
 const cyOnMock = vi.fn();
+const cyOffMock = vi.fn();
 const cyDestroyMock = vi.fn();
-const cyNodesRemoveClassMock = vi.fn();
-const cyNodesMock = vi.fn(() => ({ removeClass: cyNodesRemoveClassMock }));
-const cyGetElementByIdAddClassMock = vi.fn();
-const cyGetElementByIdMock = vi.fn(() => ({ addClass: cyGetElementByIdAddClassMock }));
+// getElementById returns length:0 so warning-overlay updatePositions skips renderedBoundingBox
+const cyGetElementByIdMock = vi.fn(() => ({
+  length: 0,
+  renderedBoundingBox: vi.fn(() => ({ x1: 0, x2: 0, y1: 0, y2: 0 })),
+  addClass: vi.fn(),
+  select: vi.fn(),
+  closedNeighborhood: vi.fn(() => ({ removeClass: vi.fn() })),
+}));
 const cytoscapeMock = vi.fn((options: { elements: { data: { id: string } }[] }) => {
   void options;
   return {
     on: cyOnMock,
+    off: cyOffMock,
     destroy: cyDestroyMock,
-    nodes: cyNodesMock,
     getElementById: cyGetElementByIdMock,
+    elements: vi.fn(() => ({
+      addClass: vi.fn(),
+      removeClass: vi.fn(),
+      unselect: vi.fn(),
+    })),
+    zoom: vi.fn(() => 1),
+    pan: vi.fn(() => ({ x: 0, y: 0 })),
+    animate: vi.fn(),
   };
 });
-
-const renderWarningsMock = vi.fn();
 
 let capturedOnDepthChange: ((depth: "route" | "file" | "function") => void) | undefined;
 const createDepthSwitchControlMock = vi.fn(
@@ -115,10 +126,6 @@ vi.mock("cytoscape", () => ({
 
 vi.mock("../depthSwitchControl.js", () => ({
   createDepthSwitchControl: createDepthSwitchControlMock,
-}));
-
-vi.mock("../warningsPanel.js", () => ({
-  renderWarnings: renderWarningsMock,
 }));
 
 function dispatchLinkageData(output: LinkageOutput): void {
@@ -169,12 +176,9 @@ describe("webview/main.ts", () => {
     acquireVsCodeApiMock.mockClear();
     cytoscapeMock.mockClear();
     cyOnMock.mockClear();
+    cyOffMock.mockClear();
     cyDestroyMock.mockClear();
-    cyNodesMock.mockClear();
-    cyNodesRemoveClassMock.mockClear();
     cyGetElementByIdMock.mockClear();
-    cyGetElementByIdAddClassMock.mockClear();
-    renderWarningsMock.mockClear();
     createDepthSwitchControlMock.mockClear();
     capturedOnDepthChange = undefined;
     document.body.innerHTML = '<div id="app"></div>';
@@ -187,7 +191,7 @@ describe("webview/main.ts", () => {
     expect(postMessageMock).toHaveBeenCalledWith({ type: "ready" });
   });
 
-  it("renders warnings and builds Cytoscape elements derived from projectDepth's default-depth output on linkageData", async () => {
+  it("builds Cytoscape elements derived from projectDepth's default-depth output on linkageData", async () => {
     await import("../main.js");
 
     const output = buildOutput({
@@ -196,9 +200,6 @@ describe("webview/main.ts", () => {
     });
 
     dispatchLinkageData(output);
-
-    expect(renderWarningsMock).toHaveBeenCalledTimes(1);
-    expect(renderWarningsMock.mock.calls[0][1]).toEqual(output.warnings);
 
     expect(cytoscapeMock).toHaveBeenCalledTimes(1);
     const options = cytoscapeMock.mock.calls[0][0] as { elements: { data: { id: string } }[] };
@@ -320,31 +321,18 @@ describe("webview/main.ts", () => {
     expect(lastOptions.elements.some((element) => element.data.kind === "function")).toBe(true);
   });
 
-  it("wires renderWarnings' onTargetHover to highlight matching nodes and clear on hover-out", async () => {
+  it("registers hover dimming and background-click deselect handlers on the Cytoscape instance", async () => {
     await import("../main.js");
 
-    const theRoute = route();
     const output = buildOutput({
-      linkages: [{ route: theRoute, apiCall: apiCall(), matchKind: "exact" }],
-      warnings: [{ target: theRoute.path, reason: "unmatched-route" }],
+      linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }],
     });
     dispatchLinkageData(output);
 
-    const onTargetHover = renderWarningsMock.mock.calls[0][2] as (target: string | null) => void;
-
-    onTargetHover(theRoute.path);
-
-    expect(cyNodesRemoveClassMock).toHaveBeenCalledWith("warning-highlight");
-    expect(cyGetElementByIdMock).toHaveBeenCalledWith(
-      `route:${theRoute.method}:${theRoute.path}:${theRoute.handler.file}:${theRoute.handler.line}`,
-    );
-    expect(cyGetElementByIdAddClassMock).toHaveBeenCalledWith("warning-highlight");
-
-    cyNodesRemoveClassMock.mockClear();
-    cyGetElementByIdAddClassMock.mockClear();
-    onTargetHover(null);
-
-    expect(cyNodesRemoveClassMock).toHaveBeenCalledWith("warning-highlight");
-    expect(cyGetElementByIdAddClassMock).not.toHaveBeenCalled();
+    // cy.on must be registered for: "tap"(node), "tap"(background), "mouseover"(node), "mouseout"(node)
+    const eventNames = cyOnMock.mock.calls.map(([eventName]: [string]) => eventName);
+    expect(eventNames).toContain("tap");
+    expect(eventNames).toContain("mouseover");
+    expect(eventNames).toContain("mouseout");
   });
 });

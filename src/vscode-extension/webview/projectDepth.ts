@@ -33,6 +33,9 @@ export interface GraphNode {
   /** 名前空間化済みID(route-linkage-engineのidをそのまま利用、route/apiCallは本関数が合成)。 */
   id: string;
   kind: "route" | "apiCall" | "file" | "function";
+  /** バックエンド/フロントエンドの区別（左右ゾーン配置に使用）。route=backend, apiCall=frontend固定。
+   *  file/functionはroute-linkage-engineのLinkedFileNode.side/LinkedFunctionNode.sideを引き継ぐ。 */
+  side: "backend" | "frontend";
   label: string;
   unmatched: boolean;
   sourceLocation?: { file: string; line: number };
@@ -77,6 +80,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
     nodes.push({
       id: routeId,
       kind: "route",
+      side: "backend",
       label: routeLabel(linkage.route),
       unmatched: false,
       sourceLocation: { ...linkage.route.handler },
@@ -84,14 +88,15 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
     nodes.push({
       id: apiCallId,
       kind: "apiCall",
+      side: "frontend",
       label: apiCallLabel(linkage.apiCall),
       unmatched: false,
       sourceLocation: { ...linkage.apiCall.location },
     });
     edges.push({
-      id: `linkage:${routeId}->${apiCallId}`,
-      source: routeId,
-      target: apiCallId,
+      id: `linkage:${apiCallId}->${routeId}`,
+      source: apiCallId,
+      target: routeId,
       kind: "linkage",
     });
   }
@@ -100,6 +105,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
     nodes.push({
       id: routeNodeId(route),
       kind: "route",
+      side: "backend",
       label: routeLabel(route),
       unmatched: true,
       sourceLocation: { ...route.handler },
@@ -110,6 +116,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
     nodes.push({
       id: apiCallNodeId(apiCall),
       kind: "apiCall",
+      side: "frontend",
       label: apiCallLabel(apiCall),
       unmatched: true,
       sourceLocation: { ...apiCall.location },
@@ -123,6 +130,7 @@ function projectFileDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: G
   const nodes: GraphNode[] = output.files.map((file) => ({
     id: file.id,
     kind: "file",
+    side: file.side,
     label: file.path,
     unmatched: false,
   }));
@@ -148,20 +156,20 @@ function projectFileDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: G
 
   const seenLinkagePairs = new Set<string>();
   for (const linkage of output.linkages) {
-    const sourceFileId = functionFileById.get(linkage.route.entryFunctionId);
-    const targetFileId = functionFileById.get(linkage.apiCall.enclosingFunctionId);
+    const frontendFileId = functionFileById.get(linkage.apiCall.enclosingFunctionId);
+    const backendFileId = functionFileById.get(linkage.route.entryFunctionId);
 
-    if (!sourceFileId || !targetFileId) {
+    if (!frontendFileId || !backendFileId) {
       continue;
     }
-    if (!fileIds.has(sourceFileId) || !fileIds.has(targetFileId)) {
+    if (!fileIds.has(frontendFileId) || !fileIds.has(backendFileId)) {
       continue;
     }
-    if (sourceFileId === targetFileId) {
+    if (frontendFileId === backendFileId) {
       continue;
     }
 
-    const pairKey = `${sourceFileId}->${targetFileId}`;
+    const pairKey = `${frontendFileId}->${backendFileId}`;
     if (seenLinkagePairs.has(pairKey)) {
       continue;
     }
@@ -169,8 +177,8 @@ function projectFileDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: G
 
     edges.push({
       id: `linkage:${pairKey}`,
-      source: sourceFileId,
-      target: targetFileId,
+      source: frontendFileId,
+      target: backendFileId,
       kind: "linkage",
     });
   }
@@ -182,6 +190,7 @@ function projectFunctionDepth(output: LinkageOutput): { nodes: GraphNode[]; edge
   const nodes: GraphNode[] = output.functions.map((fn) => ({
     id: fn.id,
     kind: "function",
+    side: fn.side,
     label: fn.name,
     unmatched: false,
     sourceLocation: { ...fn.location },
@@ -207,14 +216,14 @@ function projectFunctionDepth(output: LinkageOutput): { nodes: GraphNode[]; edge
 
   const seenLinkagePairs = new Set<string>();
   for (const linkage of output.linkages) {
-    const sourceFunctionId = linkage.route.entryFunctionId;
-    const targetFunctionId = linkage.apiCall.enclosingFunctionId;
+    const frontendFunctionId = linkage.apiCall.enclosingFunctionId;
+    const backendFunctionId = linkage.route.entryFunctionId;
 
-    if (!functionIds.has(sourceFunctionId) || !functionIds.has(targetFunctionId)) {
+    if (!functionIds.has(frontendFunctionId) || !functionIds.has(backendFunctionId)) {
       continue;
     }
 
-    const pairKey = `${sourceFunctionId}->${targetFunctionId}`;
+    const pairKey = `${frontendFunctionId}->${backendFunctionId}`;
     if (seenLinkagePairs.has(pairKey)) {
       continue;
     }
@@ -222,8 +231,8 @@ function projectFunctionDepth(output: LinkageOutput): { nodes: GraphNode[]; edge
 
     edges.push({
       id: `linkage:${pairKey}`,
-      source: sourceFunctionId,
-      target: targetFunctionId,
+      source: frontendFunctionId,
+      target: backendFunctionId,
       kind: "linkage",
     });
   }
