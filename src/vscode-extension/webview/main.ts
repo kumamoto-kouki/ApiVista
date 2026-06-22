@@ -274,43 +274,9 @@ function buildCytoscapeStyle(): StylesheetJson {
       },
     },
     {
-      selector: ".dim",
-      style: {
-        opacity: 0.24,
-      },
-    },
-    {
+      // エッジはトポロジー保持のみ（ホバー隣接検出用）。描画は linkage SVG が担当。
       selector: "edge",
-      style: {
-        width: 1.6,
-        "line-color": theme.edge,
-        "target-arrow-color": theme.edge,
-        "target-arrow-shape": "triangle",
-        "curve-style": "bezier",
-        "line-style": "solid",
-      },
-    },
-    {
-      selector: 'edge[kind = "linkage"]',
-      style: {
-        width: 2,
-        "curve-style": "bezier",
-      },
-    },
-    {
-      selector: 'edge[kind = "structural"]',
-      style: {
-        "curve-style": "taxi",
-        "taxi-direction": "horizontal",
-      },
-    },
-    {
-      selector: "edge.hi",
-      style: {
-        width: 2.4,
-        "line-color": theme.edgeHi,
-        "target-arrow-color": theme.edgeHi,
-      },
+      style: { opacity: 0, width: 0 },
     },
   ];
 }
@@ -414,7 +380,7 @@ function computeLayout(
     for (const node of ordered) {
       const depth = colDepths.get(node.id) ?? 0;
       depths.set(node.id, depth);
-      positions[node.id] = { x: x + depth * INDENT_X, y };
+      positions[node.id] = { x, y };
       const wCount = (warningsByNode.get(node.id) ?? []).length;
       y += NODE_CARD_H + wCount * WARNING_ITEM_H + ROW_GAP;
     }
@@ -441,6 +407,7 @@ function clearNodeCards(): void {
   for (const { el } of nodeCardEls) el.remove();
   nodeCardEls = [];
   clearTreeGuides();
+  clearLinkageLines();
 }
 
 // ─────────────────────────────────────────
@@ -459,11 +426,25 @@ function clearTreeGuides(): void {
   treeGuideSvg = null;
 }
 
+// ─────────────────────────────────────────
+// linkage SVG（フロントエンド↔バックエンド接続線）
+// ─────────────────────────────────────────
+
+let linkageSvg: SVGSVGElement | null = null;
+let linkageLineEls: { el: SVGPathElement; sourceId: string; targetId: string }[] = [];
+
+function clearLinkageLines(): void {
+  linkageSvg?.remove();
+  linkageSvg = null;
+  linkageLineEls = [];
+}
+
 function renderTreeGuides(
   nodes: GraphNode[],
   edges: GraphEdge[],
-  _depths: Map<string, number>,
+  depths: Map<string, number>,
   primaryParentOf: Map<string, string>,
+  warningsByNode: Map<string, Warning[]>,
 ): void {
   clearTreeGuides();
   if (!cy) return;
@@ -502,10 +483,12 @@ function renderTreeGuides(
       if (!pCyNode.length) continue;
 
       const pp = pCyNode.position();
-      const pCenterX = pp.x * zoom + pan.x;
-      const pBottomY = pp.y * zoom + pan.y + (NODE_CARD_H / 2) * zoom;
-      // ガイド線は親カード左端から 14px 内側
-      const guideX = pCenterX - (NODE_CARD_W / 2) * zoom + 14 * zoom;
+      const pDepth = depths.get(parentId) ?? 0;
+      const pVisualCenterX = pp.x * zoom + pan.x + pDepth * INDENT_X * zoom;
+      const pWarnCount = (warningsByNode.get(parentId) ?? []).length;
+      const pBottomY = pp.y * zoom + pan.y + (NODE_CARD_H / 2 + pWarnCount * WARNING_ITEM_H) * zoom;
+      // ガイド線は親カードの視覚的左端から 14px 内側
+      const guideX = pVisualCenterX - (NODE_CARD_W / 2) * zoom + 14 * zoom;
 
       const childData: { y: number; x: number; color: string }[] = [];
       for (const cid of childIds) {
@@ -513,41 +496,38 @@ function renderTreeGuides(
         if (!cCyNode.length) continue;
         const cp = cCyNode.position();
         const cCenterY = cp.y * zoom + pan.y;
-        const cCenterX = cp.x * zoom + pan.x;
+        const cDepth = depths.get(cid) ?? 0;
+        const cVisualCenterX = cp.x * zoom + pan.x + cDepth * INDENT_X * zoom;
         const childNode = byId.get(cid);
         const color = childNode
           ? ((theme[childNode.kind as NodeKind] as string | undefined) ?? theme.edge)
           : theme.edge;
-        childData.push({ y: cCenterY, x: cCenterX, color });
+        childData.push({ y: cCenterY, x: cVisualCenterX, color });
       }
       if (childData.length === 0) continue;
 
-      const lastChildY = Math.max(...childData.map((c) => c.y));
-
-      // 縦ガイド線（グレー）
-      const vPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      vPath.setAttribute("d", `M${guideX},${pBottomY + 2} L${guideX},${lastChildY}`);
-      vPath.setAttribute("stroke", "#5a5a5a");
-      vPath.setAttribute("stroke-width", "1.5");
-      vPath.setAttribute("fill", "none");
-      svg.appendChild(vPath);
-
-      // 子ごとに横矢印
-      for (const { y, x: cCenterX, color } of childData) {
-        const childCardLeft = cCenterX - (NODE_CARD_W / 2) * zoom;
+      // 親→子ペアごとにベジェカーブ（縦トランク廃止）
+      for (const { y: childCenterY, x: cVisualCenterX, color } of childData) {
+        const childCardLeft = cVisualCenterX - (NODE_CARD_W / 2) * zoom;
         const arrowTip = childCardLeft;
 
-        const hPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        hPath.setAttribute("d", `M${guideX},${y} L${arrowTip - 6},${y}`);
-        hPath.setAttribute("stroke", color);
-        hPath.setAttribute("stroke-width", "1.5");
-        hPath.setAttribute("fill", "none");
-        svg.appendChild(hPath);
+        // L字ベジェ: 親カード底面(guideX, pBottomY) → 子カード左端
+        // 制御点を (guideX, childCenterY) x2 にすることで開始接線=真下、終了接線=右向きになる
+        const curvePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        curvePath.setAttribute(
+          "d",
+          `M${guideX},${pBottomY} C${guideX},${childCenterY} ${guideX},${childCenterY} ${arrowTip - 8},${childCenterY}`,
+        );
+        curvePath.setAttribute("stroke", color);
+        curvePath.setAttribute("stroke-width", "1.5");
+        curvePath.setAttribute("fill", "none");
+        svg.appendChild(curvePath);
 
+        // 矢印ヘッド（右向き）
         const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
         arrow.setAttribute(
           "d",
-          `M${arrowTip - 8},${y - 4.5} L${arrowTip},${y} L${arrowTip - 8},${y + 4.5} Z`,
+          `M${arrowTip - 8},${childCenterY - 4.5} L${arrowTip},${childCenterY} L${arrowTip - 8},${childCenterY + 4.5} Z`,
         );
         arrow.setAttribute("fill", color);
         svg.appendChild(arrow);
@@ -556,6 +536,98 @@ function renderTreeGuides(
   };
 
   treeGuideUpdateFn = updateFn;
+  cy.on("render pan zoom resize", updateFn);
+  updateFn();
+}
+
+function renderLinkageLines(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  depths: Map<string, number>,
+): void {
+  clearLinkageLines();
+  if (!cy) return;
+
+  const linkageEdges = edges.filter((e) => e.kind === "linkage");
+  if (linkageEdges.length === 0) return;
+
+  const theme = buildTheme();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
+  type EdgeMeta = { sourceId: string; targetId: string; srcDepth: number; tgtDepth: number };
+  const edgeDataList: EdgeMeta[] = [];
+  for (const e of linkageEdges) {
+    if (!byId.has(e.source) || !byId.has(e.target)) continue;
+    edgeDataList.push({
+      sourceId: e.source,
+      targetId: e.target,
+      srcDepth: depths.get(e.source) ?? 0,
+      tgtDepth: depths.get(e.target) ?? 0,
+    });
+  }
+  if (edgeDataList.length === 0) return;
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.style.cssText =
+    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible;";
+  graphContainer.appendChild(svg);
+  linkageSvg = svg;
+
+  // arrowhead marker
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+  marker.setAttribute("id", "linkage-arrow");
+  marker.setAttribute("markerWidth", "8");
+  marker.setAttribute("markerHeight", "6");
+  marker.setAttribute("refX", "8");
+  marker.setAttribute("refY", "3");
+  marker.setAttribute("orient", "auto");
+  const arrowPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  arrowPoly.setAttribute("points", "0 0, 8 3, 0 6");
+  arrowPoly.setAttribute("fill", theme.edge);
+  marker.appendChild(arrowPoly);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const pathEls: SVGPathElement[] = edgeDataList.map(({ sourceId, targetId }) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", theme.edge);
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("marker-end", "url(#linkage-arrow)");
+    svg.appendChild(path);
+    linkageLineEls.push({ el: path, sourceId, targetId });
+    return path;
+  });
+
+  const updateFn = (): void => {
+    if (!cy) return;
+    const zoom = cy.zoom();
+    const pan = cy.pan();
+
+    edgeDataList.forEach(({ sourceId, targetId, srcDepth, tgtDepth }, i) => {
+      const srcCyNode = cy!.getElementById(sourceId);
+      const tgtCyNode = cy!.getElementById(targetId);
+      if (!srcCyNode.length || !tgtCyNode.length) return;
+
+      const srcPos = srcCyNode.position();
+      const tgtPos = tgtCyNode.position();
+
+      // 視覚的カード端（CSS depth インデント込み）
+      const srcRightX = (srcPos.x + NODE_CARD_W / 2 + srcDepth * INDENT_X) * zoom + pan.x;
+      const srcY = srcPos.y * zoom + pan.y;
+      const tgtLeftX = (tgtPos.x - NODE_CARD_W / 2 + tgtDepth * INDENT_X) * zoom + pan.x;
+      const tgtY = tgtPos.y * zoom + pan.y;
+
+      // 水平中点を制御点にしたベジェ曲線
+      const midX = (srcRightX + tgtLeftX) / 2;
+      pathEls[i].setAttribute(
+        "d",
+        `M${srcRightX},${srcY} C${midX},${srcY} ${midX},${tgtY} ${tgtLeftX},${tgtY}`,
+      );
+    });
+  };
+
   cy.on("render pan zoom resize", updateFn);
   updateFn();
 }
@@ -583,6 +655,7 @@ function createNodeCard(
     "padding:7px 10px 8px",
     "cursor:pointer",
     "box-sizing:border-box",
+    `min-height:${NODE_CARD_H}px`,
     "z-index:5",
     "pointer-events:auto",
     "transform-origin:0 0",
@@ -701,7 +774,9 @@ function updateNodeCardPositions(): void {
     // translate(中心へ移動) scale(ズーム) translate(-50%,-50%でカード中心を原点に)
     const hw = NODE_CARD_W / 2;
     const hh = NODE_CARD_H / 2;
-    el.style.transform = `translate(${screenX - hw * zoom}px, ${screenY - hh * zoom}px) scale(${zoom})`;
+    const depth = Number(el.dataset.depth ?? "0");
+    const extraX = depth * INDENT_X * zoom;
+    el.style.transform = `translate(${screenX - hw * zoom + extraX}px, ${screenY - hh * zoom}px) scale(${zoom})`;
   }
 }
 
@@ -709,7 +784,7 @@ function renderNodeCards(
   nodes: GraphNode[],
   edges: GraphEdge[],
   warningsByNode: Map<string, Warning[]>,
-  _depths: Map<string, number>,
+  depths: Map<string, number>,
 ): void {
   clearNodeCards();
   if (!cy) return;
@@ -726,6 +801,7 @@ function renderNodeCards(
   for (const node of nodes) {
     const warnings = warningsByNode.get(node.id) ?? [];
     const card = createNodeCard(node, connCount.get(node.id) ?? 0, warnings, theme);
+    card.dataset.depth = String(depths.get(node.id) ?? 0);
 
     // クリック: ソースへジャンプ
     card.addEventListener("click", () => {
@@ -746,7 +822,6 @@ function renderNodeCards(
       if (cyNode.length) {
         cy.elements().addClass("dim");
         cyNode.closedNeighborhood().removeClass("dim");
-        cyNode.closedNeighborhood().edges().addClass("hi");
       }
       const neighborIds = cyNode.length
         ? new Set(
@@ -759,11 +834,17 @@ function renderNodeCards(
       for (const { el, nodeId: nid } of nodeCardEls) {
         el.style.opacity = neighborIds.has(nid) ? "" : "0.24";
       }
+      for (const { el, sourceId, targetId } of linkageLineEls) {
+        el.style.opacity = neighborIds.has(sourceId) || neighborIds.has(targetId) ? "" : "0.24";
+      }
     });
 
     card.addEventListener("mouseleave", () => {
-      if (cy) cy.elements().removeClass("dim hi");
+      if (cy) cy.elements().removeClass("dim");
       for (const { el } of nodeCardEls) {
+        el.style.opacity = "";
+      }
+      for (const { el } of linkageLineEls) {
         el.style.opacity = "";
       }
     });
@@ -990,22 +1071,25 @@ function renderGraph(): void {
         el.style.boxShadow = "";
         el.style.opacity = "";
       }
+      for (const { el } of linkageLineEls) {
+        el.style.opacity = "";
+      }
     }
   });
 
-  // hover: 隣接エッジ強調（ノードへのホバーはカード側で処理）
+  // hover: Cytoscape invisible nodes のホバーはカード側ハンドラーが処理
   cy.on("mouseover", "node", (event) => {
     const nbr = event.target.closedNeighborhood();
     cy!.elements().addClass("dim");
     nbr.removeClass("dim");
-    nbr.edges().addClass("hi");
   });
   cy.on("mouseout", "node", () => {
-    cy!.elements().removeClass("dim hi");
+    cy!.elements().removeClass("dim");
   });
 
   renderNodeCards(nodes, edges, warningsByNode, depths);
-  renderTreeGuides(nodes, edges, depths, primaryParentOf);
+  renderTreeGuides(nodes, edges, depths, primaryParentOf, warningsByNode);
+  renderLinkageLines(nodes, edges, depths);
   renderOrphanWarnings(orphanWarnings);
 }
 
