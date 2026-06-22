@@ -14,8 +14,23 @@
 import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from "cytoscape";
 
 import { createDepthSwitchControl } from "./depthSwitchControl.js";
+import { createNodeCard, NODE_INITIALS, NODE_LABELS, type NodeKind } from "./nodeCardRenderer.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
 import { findMatchingNodeIds, projectDepth } from "./projectDepth.js";
+import {
+  clearLinkageLines,
+  clearTreeGuides,
+  getLinkageLineEls,
+  renderLinkageLines,
+  renderTreeGuides,
+} from "./svgRenderer.js";
+import { buildTheme } from "./themeManager.js";
+import {
+  inferWarningKind,
+  translateReason,
+  WARNING_KIND_COLOR,
+  type WarningKind,
+} from "./warningFormatter.js";
 import type { HostToWebviewMessage, WebviewToHostMessage } from "../webviewProtocol.js";
 import type { LinkageOutput, Warning } from "../../route-linkage/models.js";
 
@@ -77,48 +92,8 @@ const ROW_GAP = 16;
 const INDENT_X = 60;
 
 // ─────────────────────────────────────────
-// テーマ変数の解決
-// ─────────────────────────────────────────
-
-function resolveCssVar(varName: string, fallback: string): string {
-  const value = getComputedStyle(document.body).getPropertyValue(varName).trim();
-  return value === "" ? fallback : value;
-}
-
-function buildTheme() {
-  return {
-    route: resolveCssVar("--vscode-charts-blue", "#3794ff"),
-    apiCall: resolveCssVar("--vscode-charts-green", "#89d185"),
-    file: resolveCssVar("--vscode-charts-purple", "#c586c0"),
-    function: resolveCssVar("--vscode-charts-yellow", "#d7ba7d"),
-    unmatched: resolveCssVar("--vscode-charts-red", "#f14c4c"),
-    edge: resolveCssVar("--vscode-editorLineNumber-foreground", "#8a8a8a"),
-    edgeHi: resolveCssVar("--vscode-foreground", "#e8e8e8"),
-    cardBg: resolveCssVar("--vscode-editorWidget-background", "#252526"),
-    border: resolveCssVar("--vscode-widget-border", "#2b2b2b"),
-    selected: resolveCssVar("--vscode-focusBorder", "#0078d4"),
-    text: resolveCssVar("--vscode-foreground", "#cccccc"),
-    textSub: resolveCssVar("--vscode-descriptionForeground", "#9d9d9d"),
-  };
-}
-
-// ─────────────────────────────────────────
 // 凡例
 // ─────────────────────────────────────────
-
-type NodeKind = "route" | "apiCall" | "file" | "function";
-const NODE_INITIALS: Record<NodeKind, string> = {
-  route: "R",
-  apiCall: "API",
-  file: "F",
-  function: "fn",
-};
-const NODE_LABELS: Record<NodeKind, string> = {
-  route: "ルート",
-  apiCall: "APIコール",
-  file: "ファイル",
-  function: "関数",
-};
 
 function renderLegend(container: HTMLElement): void {
   const theme = buildTheme();
@@ -259,8 +234,6 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
 // ─────────────────────────────────────────
 
 function buildCytoscapeStyle(): StylesheetJson {
-  const theme = buildTheme();
-
   return [
     {
       // ノードは不可視（HTMLカードがビジュアルを担当）。エッジ結線のためサイズは維持する。
@@ -392,7 +365,7 @@ function computeLayout(
 }
 
 // ─────────────────────────────────────────
-// HTMLノードカード
+// HTMLノードカード（オーケストレーション）
 // ─────────────────────────────────────────
 
 type NodeCardEntry = { el: HTMLElement; nodeId: string };
@@ -406,357 +379,8 @@ function clearNodeCards(): void {
   }
   for (const { el } of nodeCardEls) el.remove();
   nodeCardEls = [];
-  clearTreeGuides();
+  clearTreeGuides(cy);
   clearLinkageLines();
-}
-
-// ─────────────────────────────────────────
-// ツリーガイド SVG（structural ネスト表現）
-// ─────────────────────────────────────────
-
-let treeGuideSvg: SVGSVGElement | null = null;
-let treeGuideUpdateFn: (() => void) | null = null;
-
-function clearTreeGuides(): void {
-  if (treeGuideUpdateFn) {
-    cy?.off("render pan zoom resize", treeGuideUpdateFn);
-    treeGuideUpdateFn = null;
-  }
-  treeGuideSvg?.remove();
-  treeGuideSvg = null;
-}
-
-// ─────────────────────────────────────────
-// linkage SVG（フロントエンド↔バックエンド接続線）
-// ─────────────────────────────────────────
-
-let linkageSvg: SVGSVGElement | null = null;
-let linkageLineEls: { el: SVGPathElement; sourceId: string; targetId: string }[] = [];
-
-function clearLinkageLines(): void {
-  linkageSvg?.remove();
-  linkageSvg = null;
-  linkageLineEls = [];
-}
-
-function renderTreeGuides(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  depths: Map<string, number>,
-  primaryParentOf: Map<string, string>,
-  warningsByNode: Map<string, Warning[]>,
-): void {
-  clearTreeGuides();
-  if (!cy) return;
-
-  const theme = buildTheme();
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-
-  // 同一 side 内 structural エッジのうち主親エッジのみ対象
-  const childrenMap = new Map<string, string[]>();
-  for (const e of edges) {
-    if (e.kind !== "structural") continue;
-    const s = byId.get(e.source);
-    const t = byId.get(e.target);
-    if (!s || !t || s.side !== t.side) continue;
-    if (primaryParentOf.get(e.target) !== e.source) continue;
-    if (!childrenMap.has(e.source)) childrenMap.set(e.source, []);
-    childrenMap.get(e.source)!.push(e.target);
-  }
-  if (childrenMap.size === 0) return;
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.cssText =
-    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible;";
-  graphContainer.appendChild(svg);
-  treeGuideSvg = svg;
-
-  const updateFn = (): void => {
-    if (!cy) return;
-    const zoom = cy.zoom();
-    const pan = cy.pan();
-
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-
-    for (const [parentId, childIds] of childrenMap) {
-      const pCyNode = cy.getElementById(parentId);
-      if (!pCyNode.length) continue;
-
-      const pp = pCyNode.position();
-      const pDepth = depths.get(parentId) ?? 0;
-      const pVisualCenterX = pp.x * zoom + pan.x + pDepth * INDENT_X * zoom;
-      const pWarnCount = (warningsByNode.get(parentId) ?? []).length;
-      const pBottomY = pp.y * zoom + pan.y + (NODE_CARD_H / 2 + pWarnCount * WARNING_ITEM_H) * zoom;
-      // ガイド線は親カードの視覚的左端から 14px 内側
-      const guideX = pVisualCenterX - (NODE_CARD_W / 2) * zoom + 14 * zoom;
-
-      const childData: { y: number; x: number; color: string }[] = [];
-      for (const cid of childIds) {
-        const cCyNode = cy.getElementById(cid);
-        if (!cCyNode.length) continue;
-        const cp = cCyNode.position();
-        const cCenterY = cp.y * zoom + pan.y;
-        const cDepth = depths.get(cid) ?? 0;
-        const cVisualCenterX = cp.x * zoom + pan.x + cDepth * INDENT_X * zoom;
-        const childNode = byId.get(cid);
-        const color = childNode
-          ? ((theme[childNode.kind as NodeKind] as string | undefined) ?? theme.edge)
-          : theme.edge;
-        childData.push({ y: cCenterY, x: cVisualCenterX, color });
-      }
-      if (childData.length === 0) continue;
-
-      // 親→子ペアごとにベジェカーブ（縦トランク廃止）
-      for (const { y: childCenterY, x: cVisualCenterX, color } of childData) {
-        const childCardLeft = cVisualCenterX - (NODE_CARD_W / 2) * zoom;
-        const arrowTip = childCardLeft;
-
-        // L字ベジェ: 親カード底面(guideX, pBottomY) → 子カード左端
-        // 制御点を (guideX, childCenterY) x2 にすることで開始接線=真下、終了接線=右向きになる
-        const curvePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        curvePath.setAttribute(
-          "d",
-          `M${guideX},${pBottomY} C${guideX},${childCenterY} ${guideX},${childCenterY} ${arrowTip - 8},${childCenterY}`,
-        );
-        curvePath.setAttribute("stroke", color);
-        curvePath.setAttribute("stroke-width", "1.5");
-        curvePath.setAttribute("fill", "none");
-        svg.appendChild(curvePath);
-
-        // 矢印ヘッド（右向き）
-        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        arrow.setAttribute(
-          "d",
-          `M${arrowTip - 8},${childCenterY - 4.5} L${arrowTip},${childCenterY} L${arrowTip - 8},${childCenterY + 4.5} Z`,
-        );
-        arrow.setAttribute("fill", color);
-        svg.appendChild(arrow);
-      }
-    }
-  };
-
-  treeGuideUpdateFn = updateFn;
-  cy.on("render pan zoom resize", updateFn);
-  updateFn();
-}
-
-function renderLinkageLines(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  depths: Map<string, number>,
-): void {
-  clearLinkageLines();
-  if (!cy) return;
-
-  const linkageEdges = edges.filter((e) => e.kind === "linkage");
-  if (linkageEdges.length === 0) return;
-
-  const theme = buildTheme();
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-
-  type EdgeMeta = { sourceId: string; targetId: string; srcDepth: number; tgtDepth: number };
-  const edgeDataList: EdgeMeta[] = [];
-  for (const e of linkageEdges) {
-    if (!byId.has(e.source) || !byId.has(e.target)) continue;
-    edgeDataList.push({
-      sourceId: e.source,
-      targetId: e.target,
-      srcDepth: depths.get(e.source) ?? 0,
-      tgtDepth: depths.get(e.target) ?? 0,
-    });
-  }
-  if (edgeDataList.length === 0) return;
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.cssText =
-    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible;";
-  graphContainer.appendChild(svg);
-  linkageSvg = svg;
-
-  // arrowhead marker
-  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-  marker.setAttribute("id", "linkage-arrow");
-  marker.setAttribute("markerWidth", "8");
-  marker.setAttribute("markerHeight", "6");
-  marker.setAttribute("refX", "8");
-  marker.setAttribute("refY", "3");
-  marker.setAttribute("orient", "auto");
-  const arrowPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-  arrowPoly.setAttribute("points", "0 0, 8 3, 0 6");
-  arrowPoly.setAttribute("fill", theme.edge);
-  marker.appendChild(arrowPoly);
-  defs.appendChild(marker);
-  svg.appendChild(defs);
-
-  const pathEls: SVGPathElement[] = edgeDataList.map(({ sourceId, targetId }) => {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", theme.edge);
-    path.setAttribute("stroke-width", "2");
-    path.setAttribute("marker-end", "url(#linkage-arrow)");
-    svg.appendChild(path);
-    linkageLineEls.push({ el: path, sourceId, targetId });
-    return path;
-  });
-
-  const updateFn = (): void => {
-    if (!cy) return;
-    const zoom = cy.zoom();
-    const pan = cy.pan();
-
-    edgeDataList.forEach(({ sourceId, targetId, srcDepth, tgtDepth }, i) => {
-      const srcCyNode = cy!.getElementById(sourceId);
-      const tgtCyNode = cy!.getElementById(targetId);
-      if (!srcCyNode.length || !tgtCyNode.length) return;
-
-      const srcPos = srcCyNode.position();
-      const tgtPos = tgtCyNode.position();
-
-      // 視覚的カード端（CSS depth インデント込み）
-      const srcRightX = (srcPos.x + NODE_CARD_W / 2 + srcDepth * INDENT_X) * zoom + pan.x;
-      const srcY = srcPos.y * zoom + pan.y;
-      const tgtLeftX = (tgtPos.x - NODE_CARD_W / 2 + tgtDepth * INDENT_X) * zoom + pan.x;
-      const tgtY = tgtPos.y * zoom + pan.y;
-
-      // 水平中点を制御点にしたベジェ曲線
-      const midX = (srcRightX + tgtLeftX) / 2;
-      pathEls[i].setAttribute(
-        "d",
-        `M${srcRightX},${srcY} C${midX},${srcY} ${midX},${tgtY} ${tgtLeftX},${tgtY}`,
-      );
-    });
-  };
-
-  cy.on("render pan zoom resize", updateFn);
-  updateFn();
-}
-
-function createNodeCard(
-  node: GraphNode,
-  connCount: number,
-  warnings: Warning[],
-  theme: ReturnType<typeof buildTheme>,
-): HTMLElement {
-  const kindColor = theme[node.kind as NodeKind] as string;
-  const borderColor = node.unmatched ? theme.unmatched : kindColor;
-
-  const card = document.createElement("div");
-  card.className = "node-card";
-  card.style.cssText = [
-    "position:absolute",
-    `width:${NODE_CARD_W}px`,
-    "left:0",
-    "top:0",
-    `background:${theme.cardBg}`,
-    `border:1.5px solid ${borderColor}`,
-    node.unmatched ? "border-style:dashed" : "border-style:solid",
-    "border-radius:6px",
-    "padding:7px 10px 8px",
-    "cursor:pointer",
-    "box-sizing:border-box",
-    `min-height:${NODE_CARD_H}px`,
-    "z-index:5",
-    "pointer-events:auto",
-    "transform-origin:0 0",
-    "user-select:none",
-    "transition:box-shadow 0.1s",
-  ].join(";");
-
-  // ヘッダ行: バッジ + 種別名 + 接続数
-  const header = document.createElement("div");
-  header.style.cssText = "display:flex;align-items:center;gap:5px;margin-bottom:4px;";
-
-  const badge = document.createElement("span");
-  badge.textContent = NODE_INITIALS[node.kind as NodeKind] ?? "?";
-  badge.style.cssText = [
-    `background:${kindColor}`,
-    "color:#1f1f1f",
-    "font-size:9px",
-    "font-weight:700",
-    "padding:1px 5px",
-    "border-radius:3px",
-    "font-family:ui-monospace,Menlo,monospace",
-    "flex-shrink:0",
-    "line-height:1.5",
-  ].join(";");
-
-  const typeName = document.createElement("span");
-  typeName.textContent = NODE_LABELS[node.kind as NodeKind] ?? node.kind;
-  typeName.style.cssText = `font-size:10px;color:${theme.textSub};flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
-
-  const connBadge = document.createElement("span");
-  connBadge.textContent = `${connCount} 接続`;
-  connBadge.style.cssText = `font-size:10px;color:${theme.textSub};white-space:nowrap;flex-shrink:0;`;
-
-  header.appendChild(badge);
-  header.appendChild(typeName);
-  header.appendChild(connBadge);
-
-  // メインラベル
-  const labelEl = document.createElement("div");
-  labelEl.textContent = node.label;
-  labelEl.style.cssText = [
-    "font-size:12px",
-    "font-weight:600",
-    `color:${theme.text}`,
-    "font-family:ui-monospace,Menlo,monospace",
-    "overflow:hidden",
-    "text-overflow:ellipsis",
-    "white-space:nowrap",
-    "line-height:1.4",
-  ].join(";");
-
-  card.appendChild(header);
-  card.appendChild(labelEl);
-
-  // ソース位置
-  if (node.sourceLocation) {
-    const source = document.createElement("div");
-    source.textContent = `↗ ${node.sourceLocation.file}:${node.sourceLocation.line}`;
-    source.style.cssText = [
-      "font-size:10px",
-      `color:${theme.textSub}`,
-      "font-style:italic",
-      "overflow:hidden",
-      "text-overflow:ellipsis",
-      "white-space:nowrap",
-      "line-height:1.4",
-      "margin-top:2px",
-    ].join(";");
-    card.appendChild(source);
-  }
-
-  // 警告セクション（カード内に埋め込み）
-  if (warnings.length > 0) {
-    const warningsDiv = document.createElement("div");
-    warningsDiv.style.cssText = `margin-top:6px;border-top:1px solid ${theme.border};padding-top:4px;`;
-
-    for (const w of warnings) {
-      const kind = inferWarningKind(w);
-      const icon = kind === "excluded" ? "■" : kind === "parse" ? "◆" : "○";
-      const color = WARNING_KIND_COLOR[kind];
-
-      const item = document.createElement("div");
-      item.style.cssText = `padding:3px 0 3px 8px;border-left:2px solid ${color};margin-bottom:3px;`;
-
-      const line1 = document.createElement("div");
-      line1.style.cssText = `font-size:10px;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;`;
-      line1.textContent = `${icon} ${w.target}`;
-
-      const line2 = document.createElement("div");
-      line2.style.cssText = `font-size:9px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;`;
-      line2.textContent = translateReason(w.reason);
-
-      item.appendChild(line1);
-      item.appendChild(line2);
-      warningsDiv.appendChild(item);
-    }
-
-    card.appendChild(warningsDiv);
-  }
-
-  return card;
 }
 
 function updateNodeCardPositions(): void {
@@ -768,10 +392,8 @@ function updateNodeCardPositions(): void {
     const cyNode = cy.getElementById(nodeId);
     if (!cyNode.length) continue;
     const pos = cyNode.position();
-    // グラフ座標 → スクリーン座標（ノード中心）
     const screenX = pos.x * zoom + pan.x;
     const screenY = pos.y * zoom + pan.y;
-    // translate(中心へ移動) scale(ズーム) translate(-50%,-50%でカード中心を原点に)
     const hw = NODE_CARD_W / 2;
     const hh = NODE_CARD_H / 2;
     const depth = Number(el.dataset.depth ?? "0");
@@ -805,7 +427,6 @@ function renderNodeCards(
 
     // クリック: ソースへジャンプ
     card.addEventListener("click", () => {
-      // 他カードの選択表示をリセット
       for (const { el } of nodeCardEls) {
         el.style.boxShadow = "";
       }
@@ -834,7 +455,7 @@ function renderNodeCards(
       for (const { el, nodeId: nid } of nodeCardEls) {
         el.style.opacity = neighborIds.has(nid) ? "" : "0.24";
       }
-      for (const { el, sourceId, targetId } of linkageLineEls) {
+      for (const { el, sourceId, targetId } of getLinkageLineEls()) {
         el.style.opacity = neighborIds.has(sourceId) || neighborIds.has(targetId) ? "" : "0.24";
       }
     });
@@ -844,7 +465,7 @@ function renderNodeCards(
       for (const { el } of nodeCardEls) {
         el.style.opacity = "";
       }
-      for (const { el } of linkageLineEls) {
+      for (const { el } of getLinkageLineEls()) {
         el.style.opacity = "";
       }
     });
@@ -858,63 +479,6 @@ function renderNodeCards(
   cy.on("render pan zoom resize", updateFn);
   updateNodeCardPositions();
 }
-
-// ─────────────────────────────────────────
-// 警告 kind 推定 / 日本語変換
-// ─────────────────────────────────────────
-
-type WarningKind = "unmatched" | "excluded" | "parse";
-
-const REASON_JA: Record<string, string> = {
-  "unmatched-api-call": "未連携のAPIコール",
-  "unmatched-route": "未連携のルート",
-  "dynamic-url-unsupported": "URLを静的に解決できません",
-  "multiple-route-match": "複数のルートに一致するAPIコール",
-  "unsupported-decorator": "未対応のデコレーター",
-};
-
-function translateReason(reason: string): string {
-  if (REASON_JA[reason]) return REASON_JA[reason];
-  // パターンマッチ（フィクスチャ固有の長い英語文字列）
-  const r = reason.toLowerCase();
-  if (r.startsWith("syntax error")) {
-    const detail = reason.replace(/^syntax error:?\s*/i, "").trim();
-    if (!detail) return "構文エラー";
-    if (detail.toLowerCase().includes("missing end tag")) return "構文エラー：終了タグがありません";
-    return `構文エラー：${detail}`;
-  }
-  // "excluded api call" を先に判定（"statically" を含む場合に誤マッチしないよう順序に注意）
-  if (r.includes("excluded api call") || (r.includes("excluded") && r.includes("url"))) {
-    return "除外：URLを静的に決定できません";
-  }
-  if (
-    r.includes("statically resolved") ||
-    r.includes("statically determined") ||
-    r.includes("statically determinable") ||
-    r.includes("not statically")
-  ) {
-    return "ルートパスを静的に解決できません";
-  }
-  return reason;
-}
-
-function inferWarningKind(warning: Warning): WarningKind {
-  const r = warning.reason;
-  // 英語の reason コード（route-linkage-engine 出力）
-  if (r === "dynamic-url-unsupported" || r === "multiple-route-match") return "excluded";
-  if (r === "unsupported-decorator") return "parse";
-  // 日本語フォールバック
-  if (r.includes("除外") || r.includes("静的") || r.includes("URL")) return "excluded";
-  if (r.includes("構文") || r.includes("解析") || r.includes("エラー") || r.includes("error"))
-    return "parse";
-  return "unmatched";
-}
-
-const WARNING_KIND_COLOR: Record<WarningKind, string> = {
-  unmatched: "#f14c4c",
-  excluded: "#d7ba7d",
-  parse: "#e0944a",
-};
 
 // ─────────────────────────────────────────
 // 警告オーバーレイ
@@ -1072,7 +636,7 @@ function renderGraph(): void {
         el.style.boxShadow = "";
         el.style.opacity = "";
       }
-      for (const { el } of linkageLineEls) {
+      for (const { el } of getLinkageLineEls()) {
         el.style.opacity = "";
       }
     }
@@ -1089,8 +653,8 @@ function renderGraph(): void {
   });
 
   renderNodeCards(nodes, edges, warningsByNode, depths);
-  renderTreeGuides(nodes, edges, depths, primaryParentOf, warningsByNode);
-  renderLinkageLines(nodes, edges, depths);
+  renderTreeGuides(cy, graphContainer, nodes, edges, depths, primaryParentOf, warningsByNode);
+  renderLinkageLines(cy, graphContainer, nodes, edges, depths);
   renderOrphanWarnings(orphanWarnings);
 }
 

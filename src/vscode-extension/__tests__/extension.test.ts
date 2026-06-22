@@ -48,6 +48,11 @@ class FakeAnalysisError extends Error {
 }
 
 vi.mock("vscode", () => ({
+  Uri: {
+    joinPath: vi.fn((_base: { fsPath: string }, ...parts: string[]) => ({
+      fsPath: parts.join("/"),
+    })),
+  },
   commands: {
     registerCommand: registerCommandMock,
   },
@@ -178,7 +183,7 @@ describe("extension.activate", () => {
     await handler();
 
     expect(validateMock).toHaveBeenCalledTimes(1);
-    expect(analyzeMock).toHaveBeenCalledWith(BACKEND_ROOT, FRONTEND_ROOT);
+    expect(analyzeMock).toHaveBeenCalledWith(BACKEND_ROOT, FRONTEND_ROOT, expect.any(String));
     expect(showOrRevealMock).toHaveBeenCalledTimes(1);
 
     const validateOrder = validateMock.mock.invocationCallOrder[0];
@@ -257,7 +262,7 @@ describe("extension.activate", () => {
     await handler();
 
     expect(validateMock).toHaveBeenCalledTimes(1);
-    expect(analyzeMock).toHaveBeenCalledWith(BACKEND_ROOT, FRONTEND_ROOT);
+    expect(analyzeMock).toHaveBeenCalledWith(BACKEND_ROOT, FRONTEND_ROOT, expect.any(String));
     expect(postLinkageUpdateMock).toHaveBeenCalledWith(output);
     expect(showOrRevealMock).not.toHaveBeenCalled();
   });

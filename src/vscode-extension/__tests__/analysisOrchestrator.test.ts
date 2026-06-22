@@ -76,7 +76,7 @@ describe("analysisOrchestrator.analyze", () => {
     const result = await analyze(BACKEND_ROOT, FRONTEND_ROOT);
 
     expect(result).toBe(linkageOutput);
-    expect(analyzeBackendMock).toHaveBeenCalledWith(BACKEND_ROOT);
+    expect(analyzeBackendMock).toHaveBeenCalledWith(BACKEND_ROOT, { wasmDir: undefined });
     expect(analyzeFrontendMock).toHaveBeenCalledWith(FRONTEND_ROOT);
     expect(linkRoutesMock).toHaveBeenCalledWith(backendOutput, frontendOutput);
 

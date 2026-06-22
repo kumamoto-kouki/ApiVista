@@ -5,26 +5,14 @@
  * 本モジュールはランタイム副作用を持たず、型と `SCHEMA_VERSION` 定数のみを公開する。
  */
 
+import type { HttpMethod, SourceLocation, Warning } from "../shared/models.js";
+export type { HttpMethod, SourceLocation, Warning };
+
 /** 出力スキーマのバージョン。互換性の境界（design.md schemaVersion=1）。 */
 export const SCHEMA_VERSION = 1 as const;
 
-/** HTTP メソッドの内部表現。`RouteDefinition.method` は大文字 string として直列化する。 */
-export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-
 /** スキーマ参照の役割。 */
 export type SchemaRole = "request" | "response";
-
-/** ソース位置。`file` は backendRoot 相対 POSIX パス、`line` は 1 基底。 */
-export interface SourceLocation {
-  file: string;
-  line: number;
-}
-
-/** 機械可読な除外・診断情報。 */
-export interface Warning {
-  target: string;
-  reason: string;
-}
 
 /** ルートに関連付くリクエスト/レスポンスモデル参照。 */
 export interface SchemaReference {

@@ -52,13 +52,21 @@ function reportError(error: unknown): void {
   throw error;
 }
 
-async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): Promise<void> {
+/** validate→withProgress(analyze) の共通フロー。エラー時は`null`を返す。 */
+async function runAnalysis(
+  wasmDir: string,
+  progressTitle: string,
+): Promise<{
+  backendRoot: string;
+  frontendRoot: string;
+  output: Awaited<ReturnType<typeof analyze>>;
+} | null> {
   let scanned: { backendRoot: string; frontendRoot: string };
   try {
     scanned = validate();
   } catch (error) {
     reportError(error);
-    return;
+    return null;
   }
 
   const { backendRoot, frontendRoot } = scanned;
@@ -66,13 +74,22 @@ async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): 
   let output;
   try {
     output = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "ApiVista: 解析中..." },
+      { location: vscode.ProgressLocation.Notification, title: progressTitle },
       async () => analyze(backendRoot, frontendRoot, wasmDir),
     );
   } catch (error) {
     reportError(error);
-    return;
+    return null;
   }
+
+  return { backendRoot, frontendRoot, output };
+}
+
+async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): Promise<void> {
+  const result = await runAnalysis(wasmDir, "ApiVista: 解析中...");
+  if (result === null) return;
+
+  const { backendRoot, frontendRoot, output } = result;
 
   // `onDidDispose`コールバックは新規パネル生成時のみ発火するため、その時点で初めて
   // `createReanalysisWatcher()`が返した同一インスタンスを束縛できればよい。`showOrReveal`が
@@ -98,28 +115,9 @@ async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): 
 }
 
 async function runReanalyze(wasmDir: string): Promise<void> {
-  let scanned: { backendRoot: string; frontendRoot: string };
-  try {
-    scanned = validate();
-  } catch (error) {
-    reportError(error);
-    return;
-  }
-
-  const { backendRoot, frontendRoot } = scanned;
-
-  let output;
-  try {
-    output = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "ApiVista: 再解析中..." },
-      async () => analyze(backendRoot, frontendRoot, wasmDir),
-    );
-  } catch (error) {
-    reportError(error);
-    return;
-  }
-
-  graphPanel.postLinkageUpdate(output);
+  const result = await runAnalysis(wasmDir, "ApiVista: 再解析中...");
+  if (result === null) return;
+  graphPanel.postLinkageUpdate(result.output);
 }
 
 export function activate(context: vscode.ExtensionContext): void {

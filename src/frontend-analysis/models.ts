@@ -12,23 +12,11 @@
  * 本モジュールはランタイム副作用を持たず、型・`SCHEMA_VERSION` 定数・型ガードのみを公開する。
  */
 
+import type { HttpMethod, SourceLocation, Warning } from "../shared/models.js";
+export type { HttpMethod, SourceLocation, Warning };
+
 /** 出力スキーマのバージョン。互換性の境界（design.md schemaVersion=1）。 */
 export const SCHEMA_VERSION = 1 as const;
-
-/** HTTP メソッドの内部表現。`ApiCall.method` は大文字 string として直列化する。 */
-export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-
-/** ソース位置。`file` は frontendRoot 相対 POSIX パス、`line` は 1 基底。 */
-export interface SourceLocation {
-  file: string;
-  line: number;
-}
-
-/** 機械可読な除外・診断情報（backend と同形）。 */
-export interface Warning {
-  target: string;
-  reason: string;
-}
 
 /**
  * API 呼び出し（階層1: ルート連携）。backend `RouteDefinition` の対称物。
