@@ -36,9 +36,13 @@ export class AnalysisError extends Error {
  * @param frontendRoot 解析対象frontendルートの絶対パス(存在するディレクトリ。workspaceScannerが検証済み)
  * @throws `AnalysisError` `analyzeBackend`/`analyzeFrontend`/`linkRoutes`のいずれかが失敗した場合
  */
-export async function analyze(backendRoot: string, frontendRoot: string): Promise<LinkageOutput> {
+export async function analyze(
+  backendRoot: string,
+  frontendRoot: string,
+  wasmDir?: string,
+): Promise<LinkageOutput> {
   try {
-    const backendOutput = await analyzeBackend(backendRoot);
+    const backendOutput = await analyzeBackend(backendRoot, { wasmDir });
     const frontendOutput = analyzeFrontend(frontendRoot);
     return linkRoutes(backendOutput, frontendOutput);
   } catch (error) {

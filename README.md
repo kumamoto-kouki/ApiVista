@@ -87,4 +87,4 @@ npm install
 
 ## プロジェクト概要ドキュメント
 
-プロジェクトの目的・スコープ・技術スタック・スペック構成・導入方法は [docs/project-overview.md](docs/project-overview.md) にまとめています。
+プロジェクトの目的・スコープ・技術スタック・スペック構成・導入方法は `docs/project-overview.md` にまとめています。

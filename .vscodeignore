@@ -1,0 +1,47 @@
+# Source & tests (not needed at runtime)
+src/**
+tests/**
+
+# Spec / steering / AI tooling
+.kiro/**
+.claude/**
+.serena/**
+.mcp.json
+
+# TypeScript config
+tsconfig*.json
+tsconfig.json
+
+# Linting / formatting
+eslint.config.js
+.eslintrc*
+.prettierrc*
+
+# Dev scripts
+.demo_driver.mjs
+vitest.config.*
+*.sh
+
+# Docs (internal)
+CLAUDE.md
+design-brief-route-linkage-graph.md
+docs/**
+
+# Python environment (from development)
+.venv/**
+.pytest_cache/**
+.ruff_cache/**
+__pycache__/**
+*.pyc
+
+# Test infrastructure
+.vscode-test/**
+out-test-electron/**
+
+# Source maps & test artifacts in out/
+out/**/*.map
+out/**/__tests__/**
+
+# Git
+.gitignore
+.git/**

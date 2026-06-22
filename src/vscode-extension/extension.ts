@@ -52,7 +52,7 @@ function reportError(error: unknown): void {
   throw error;
 }
 
-async function runShowGraph(context: vscode.ExtensionContext): Promise<void> {
+async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): Promise<void> {
   let scanned: { backendRoot: string; frontendRoot: string };
   try {
     scanned = validate();
@@ -67,7 +67,7 @@ async function runShowGraph(context: vscode.ExtensionContext): Promise<void> {
   try {
     output = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "ApiVista: 解析中..." },
-      async () => analyze(backendRoot, frontendRoot),
+      async () => analyze(backendRoot, frontendRoot, wasmDir),
     );
   } catch (error) {
     reportError(error);
@@ -97,7 +97,7 @@ async function runShowGraph(context: vscode.ExtensionContext): Promise<void> {
   activeWatcher = newWatcher;
 }
 
-async function runReanalyze(): Promise<void> {
+async function runReanalyze(wasmDir: string): Promise<void> {
   let scanned: { backendRoot: string; frontendRoot: string };
   try {
     scanned = validate();
@@ -112,7 +112,7 @@ async function runReanalyze(): Promise<void> {
   try {
     output = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "ApiVista: 再解析中..." },
-      async () => analyze(backendRoot, frontendRoot),
+      async () => analyze(backendRoot, frontendRoot, wasmDir),
     );
   } catch (error) {
     reportError(error);
@@ -123,11 +123,12 @@ async function runReanalyze(): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  const wasmDir = vscode.Uri.joinPath(context.extensionUri, "media", "wasm").fsPath;
   const showGraphDisposable = vscode.commands.registerCommand("apivista.showGraph", () =>
-    runShowGraph(context),
+    runShowGraph(context, wasmDir),
   );
   const reanalyzeDisposable = vscode.commands.registerCommand("apivista.reanalyze", () =>
-    runReanalyze(),
+    runReanalyze(wasmDir),
   );
 
   context.subscriptions.push(showGraphDisposable, reanalyzeDisposable);

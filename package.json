@@ -1,7 +1,8 @@
 {
   "name": "apivista",
+  "displayName": "ApiVista",
   "version": "0.1.0",
-  "private": true,
+  "publisher": "kumamoto-kouki",
   "description": "FastAPI <-> frontend route linkage visualizer for VSCode",
   "type": "module",
   "engines": {
@@ -24,8 +25,10 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && npm run bundle:webview",
+    "copy-wasm": "mkdir -p media/wasm && cp node_modules/web-tree-sitter/tree-sitter.wasm media/wasm/ && cp node_modules/tree-sitter-wasms/out/tree-sitter-python.wasm media/wasm/",
+    "build": "tsc -p tsconfig.json && npm run bundle:webview && npm run copy-wasm",
     "bundle:webview": "esbuild src/vscode-extension/webview/main.ts --bundle --outfile=media/webview/bundle.js --format=iife --platform=browser",
+    "package": "npm run build && npx vsce package --allow-missing-repository",
     "typecheck:tests": "tsc -p tsconfig.typecheck.json",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -40,21 +43,21 @@
     "@types/vscode": "^1.90.0",
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.0.0",
+    "cytoscape": "^3.34.0",
     "esbuild": "^0.28.1",
     "eslint": "^9.0.0",
     "glob": "^13.0.6",
     "jsdom": "^25.0.0",
     "mocha": "^11.7.6",
     "prettier": "^3.0.0",
-    "tree-sitter-wasms": "^0.1.13",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^4.0.0",
-    "web-tree-sitter": "^0.25.10"
+    "tree-sitter-wasms": "^0.1.13",
+    "vitest": "^4.0.0"
   },
   "dependencies": {
     "@vue/compiler-sfc": "^3.5.38",
-    "cytoscape": "^3.34.0",
-    "ts-morph": "^23.0.0"
+    "ts-morph": "^23.0.0",
+    "web-tree-sitter": "^0.25.10"
   }
 }
