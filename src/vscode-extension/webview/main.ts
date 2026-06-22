@@ -46,9 +46,16 @@ const graphContainer = document.createElement("div");
 graphContainer.id = "graph";
 graphContainer.style.cssText = "flex:1 1 auto;min-height:300px;position:relative;overflow:hidden;";
 
+// 孤立警告セクション（グラフ下部、警告がある場合のみ表示）
+const orphanSection = document.createElement("div");
+orphanSection.id = "orphan-section";
+orphanSection.style.cssText =
+  "flex-shrink:0;display:none;border-top:1px solid var(--vscode-widget-border,#2b2b2b);";
+
 appRoot.appendChild(depthSwitchContainer);
 appRoot.appendChild(legendContainer);
 appRoot.appendChild(graphContainer);
+appRoot.appendChild(orphanSection);
 
 let currentOutput: LinkageOutput | undefined;
 let currentDepth: Depth = DEFAULT_DEPTH;
@@ -62,6 +69,12 @@ let cy: Core | undefined;
 const NODE_CARD_W = 200;
 /** ズーム=1 時のカード高さ（px）。Cytoscapeノードの height と一致させる。 */
 const NODE_CARD_H = 80;
+/** 警告1件あたりのカード内高さ（2行＋パディング）（px）。 */
+const WARNING_ITEM_H = 34;
+/** カード間の最小ギャップ（px）。 */
+const ROW_GAP = 16;
+/** structural ネスト1階層ごとの X インデント（px）。 */
+const INDENT_X = 60;
 
 // ─────────────────────────────────────────
 // テーマ変数の解決
@@ -205,7 +218,7 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
     `border:1px solid ${theme.apiCall}35`,
     "border-radius:8px",
     "pointer-events:none",
-    "z-index:0",
+    "z-index:2",
     "box-sizing:border-box",
   ].join(";");
 
@@ -226,7 +239,7 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
     `border:1px solid ${theme.route}35`,
     "border-radius:8px",
     "pointer-events:none",
-    "z-index:0",
+    "z-index:2",
     "box-sizing:border-box",
   ].join(";");
 
@@ -236,8 +249,9 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
   beHeader.innerHTML = `<span style="font-size:12px;font-weight:600;color:${theme.route}">バックエンド <span style="font-weight:400;font-size:11px;color:${theme.textSub}">呼び出し先</span></span><span style="background:${theme.route};color:#1f1f1f;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${backendCount}</span>`;
   backendZone.appendChild(beHeader);
 
-  graphContainer.insertBefore(frontendZone, graphContainer.firstChild);
-  graphContainer.insertBefore(backendZone, graphContainer.firstChild);
+  // Cytoscape canvas 生成後に追加することでキャンバス上に重なる (z-index:2 > canvas:auto)
+  graphContainer.appendChild(frontendZone);
+  graphContainer.appendChild(backendZone);
 }
 
 // ─────────────────────────────────────────
@@ -302,56 +316,113 @@ function buildCytoscapeStyle(): StylesheetJson {
 }
 
 // ─────────────────────────────────────────
-// プリセットレイアウト計算
+// レイアウト計算（位置 + structural 深度）
 // ─────────────────────────────────────────
 
-function buildPresetPositions(
+type LayoutResult = {
+  positions: Record<string, { x: number; y: number }>;
+  depths: Map<string, number>;
+  primaryParentOf: Map<string, string>;
+};
+
+function computeLayout(
   nodes: GraphNode[],
   edges: GraphEdge[],
-): Record<string, { x: number; y: number }> {
+  warningsByNode: Map<string, Warning[]>,
+): LayoutResult {
   const LEFT_X = 200;
   const RIGHT_X = 700;
-  const ROW_H = 110;
-  const TOP_Y = 90;
+  const TOP_Y = 50;
 
   const frontendNodes = nodes.filter((n) => n.side === "frontend");
   const backendNodes = nodes.filter((n) => n.side === "backend");
 
-  function treeOrder(group: GraphNode[]): GraphNode[] {
+  /** グループ内 structural エッジ（同一 side）のみ取得 */
+  function groupStructEdges(group: GraphNode[]): GraphEdge[] {
     const ids = new Set(group.map((n) => n.id));
-    const structuralEdges = edges.filter(
-      (e) => e.kind === "structural" && ids.has(e.source) && ids.has(e.target),
-    );
-    const children = new Set(structuralEdges.map((e) => e.target));
+    return edges.filter((e) => e.kind === "structural" && ids.has(e.source) && ids.has(e.target));
+  }
+
+  /** structural エッジを優先した深さ優先訪問順（primaryParentOf が渡された場合は主親のみ辿る） */
+  function treeOrder(
+    group: GraphNode[],
+    structEdges: GraphEdge[],
+    primaryParentOf?: Map<string, string>,
+  ): GraphNode[] {
+    const children = new Set(structEdges.map((e) => e.target));
     const roots = group.filter((n) => !children.has(n.id));
     const result: GraphNode[] = [];
     const visited = new Set<string>();
+    const nodeMap = new Map(group.map((n) => [n.id, n]));
 
-    function visit(nodeId: string): void {
-      if (visited.has(nodeId)) return;
-      visited.add(nodeId);
-      const node = group.find((n) => n.id === nodeId);
-      if (node) result.push(node);
-      for (const e of structuralEdges) {
-        if (e.source === nodeId) visit(e.target);
+    function visit(id: string): void {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const n = nodeMap.get(id);
+      if (n) result.push(n);
+      for (const e of structEdges) {
+        if (e.source === id) {
+          if (!primaryParentOf || primaryParentOf.get(e.target) === id) {
+            visit(e.target);
+          }
+        }
       }
     }
 
-    for (const root of roots) visit(root.id);
-    for (const node of group) {
-      if (!visited.has(node.id)) result.push(node);
+    for (const r of roots) visit(r.id);
+    for (const n of group) {
+      if (!visited.has(n.id)) result.push(n);
     }
     return result;
   }
 
-  const pos: Record<string, { x: number; y: number }> = {};
-  treeOrder(frontendNodes).forEach((n, i) => {
-    pos[n.id] = { x: LEFT_X, y: TOP_Y + i * ROW_H };
-  });
-  treeOrder(backendNodes).forEach((n, i) => {
-    pos[n.id] = { x: RIGHT_X, y: TOP_Y + i * ROW_H };
-  });
-  return pos;
+  /** structural 親子関係から各ノードの深さと主親マップを算出 */
+  function calcDepths(
+    group: GraphNode[],
+    structEdges: GraphEdge[],
+  ): { depthMap: Map<string, number>; parentOf: Map<string, string> } {
+    const parentOf = new Map<string, string>();
+    for (const e of structEdges) parentOf.set(e.target, e.source);
+
+    const depths = new Map<string, number>();
+    function getDepth(id: string): number {
+      if (depths.has(id)) return depths.get(id)!;
+      const parent = parentOf.get(id);
+      if (!parent) {
+        depths.set(id, 0);
+        return 0;
+      }
+      const d = getDepth(parent) + 1;
+      depths.set(id, d);
+      return d;
+    }
+    for (const n of group) getDepth(n.id);
+    return { depthMap: depths, parentOf };
+  }
+
+  const positions: Record<string, { x: number; y: number }> = {};
+  const depths = new Map<string, number>();
+  const primaryParentOf = new Map<string, string>();
+
+  function layoutColumn(group: GraphNode[], x: number): void {
+    const se = groupStructEdges(group);
+    const { depthMap: colDepths, parentOf: colParentOf } = calcDepths(group, se);
+    for (const [k, v] of colParentOf) primaryParentOf.set(k, v);
+    const ordered = treeOrder(group, se, colParentOf);
+
+    let y = TOP_Y + NODE_CARD_H / 2;
+    for (const node of ordered) {
+      const depth = colDepths.get(node.id) ?? 0;
+      depths.set(node.id, depth);
+      positions[node.id] = { x: x + depth * INDENT_X, y };
+      const wCount = (warningsByNode.get(node.id) ?? []).length;
+      y += NODE_CARD_H + wCount * WARNING_ITEM_H + ROW_GAP;
+    }
+  }
+
+  layoutColumn(frontendNodes, LEFT_X);
+  layoutColumn(backendNodes, RIGHT_X);
+  return { positions, depths, primaryParentOf };
 }
 
 // ─────────────────────────────────────────
@@ -369,11 +440,130 @@ function clearNodeCards(): void {
   }
   for (const { el } of nodeCardEls) el.remove();
   nodeCardEls = [];
+  clearTreeGuides();
+}
+
+// ─────────────────────────────────────────
+// ツリーガイド SVG（structural ネスト表現）
+// ─────────────────────────────────────────
+
+let treeGuideSvg: SVGSVGElement | null = null;
+let treeGuideUpdateFn: (() => void) | null = null;
+
+function clearTreeGuides(): void {
+  if (treeGuideUpdateFn) {
+    cy?.off("render pan zoom resize", treeGuideUpdateFn);
+    treeGuideUpdateFn = null;
+  }
+  treeGuideSvg?.remove();
+  treeGuideSvg = null;
+}
+
+function renderTreeGuides(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  _depths: Map<string, number>,
+  primaryParentOf: Map<string, string>,
+): void {
+  clearTreeGuides();
+  if (!cy) return;
+
+  const theme = buildTheme();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
+  // 同一 side 内 structural エッジのうち主親エッジのみ対象
+  const childrenMap = new Map<string, string[]>();
+  for (const e of edges) {
+    if (e.kind !== "structural") continue;
+    const s = byId.get(e.source);
+    const t = byId.get(e.target);
+    if (!s || !t || s.side !== t.side) continue;
+    if (primaryParentOf.get(e.target) !== e.source) continue;
+    if (!childrenMap.has(e.source)) childrenMap.set(e.source, []);
+    childrenMap.get(e.source)!.push(e.target);
+  }
+  if (childrenMap.size === 0) return;
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.style.cssText =
+    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible;";
+  graphContainer.appendChild(svg);
+  treeGuideSvg = svg;
+
+  const updateFn = (): void => {
+    if (!cy) return;
+    const zoom = cy.zoom();
+    const pan = cy.pan();
+
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    for (const [parentId, childIds] of childrenMap) {
+      const pCyNode = cy.getElementById(parentId);
+      if (!pCyNode.length) continue;
+
+      const pp = pCyNode.position();
+      const pCenterX = pp.x * zoom + pan.x;
+      const pBottomY = pp.y * zoom + pan.y + (NODE_CARD_H / 2) * zoom;
+      // ガイド線は親カード左端から 14px 内側
+      const guideX = pCenterX - (NODE_CARD_W / 2) * zoom + 14 * zoom;
+
+      const childData: { y: number; x: number; color: string }[] = [];
+      for (const cid of childIds) {
+        const cCyNode = cy.getElementById(cid);
+        if (!cCyNode.length) continue;
+        const cp = cCyNode.position();
+        const cCenterY = cp.y * zoom + pan.y;
+        const cCenterX = cp.x * zoom + pan.x;
+        const childNode = byId.get(cid);
+        const color = childNode
+          ? ((theme[childNode.kind as NodeKind] as string | undefined) ?? theme.edge)
+          : theme.edge;
+        childData.push({ y: cCenterY, x: cCenterX, color });
+      }
+      if (childData.length === 0) continue;
+
+      const lastChildY = Math.max(...childData.map((c) => c.y));
+
+      // 縦ガイド線（グレー）
+      const vPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      vPath.setAttribute("d", `M${guideX},${pBottomY + 2} L${guideX},${lastChildY}`);
+      vPath.setAttribute("stroke", "#5a5a5a");
+      vPath.setAttribute("stroke-width", "1.5");
+      vPath.setAttribute("fill", "none");
+      svg.appendChild(vPath);
+
+      // 子ごとに横矢印
+      for (const { y, x: cCenterX, color } of childData) {
+        const childCardLeft = cCenterX - (NODE_CARD_W / 2) * zoom;
+        const arrowTip = childCardLeft;
+
+        const hPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        hPath.setAttribute("d", `M${guideX},${y} L${arrowTip - 6},${y}`);
+        hPath.setAttribute("stroke", color);
+        hPath.setAttribute("stroke-width", "1.5");
+        hPath.setAttribute("fill", "none");
+        svg.appendChild(hPath);
+
+        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        arrow.setAttribute(
+          "d",
+          `M${arrowTip - 8},${y - 4.5} L${arrowTip},${y} L${arrowTip - 8},${y + 4.5} Z`,
+        );
+        arrow.setAttribute("fill", color);
+        svg.appendChild(arrow);
+      }
+    }
+  };
+
+  treeGuideUpdateFn = updateFn;
+  cy.on("render pan zoom resize", updateFn);
+  updateFn();
 }
 
 function createNodeCard(
   node: GraphNode,
   connCount: number,
+  warnings: Warning[],
   theme: ReturnType<typeof buildTheme>,
 ): HTMLElement {
   const kindColor = theme[node.kind as NodeKind] as string;
@@ -464,6 +654,35 @@ function createNodeCard(
     card.appendChild(source);
   }
 
+  // 警告セクション（カード内に埋め込み）
+  if (warnings.length > 0) {
+    const warningsDiv = document.createElement("div");
+    warningsDiv.style.cssText = `margin-top:6px;border-top:1px solid ${theme.border};padding-top:4px;`;
+
+    for (const w of warnings) {
+      const kind = inferWarningKind(w);
+      const icon = kind === "excluded" ? "■" : kind === "parse" ? "◆" : "○";
+      const color = WARNING_KIND_COLOR[kind];
+
+      const item = document.createElement("div");
+      item.style.cssText = `padding:3px 0 3px 8px;border-left:2px solid ${color};margin-bottom:3px;`;
+
+      const line1 = document.createElement("div");
+      line1.style.cssText = `font-size:10px;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;`;
+      line1.textContent = `${icon} ${w.target}`;
+
+      const line2 = document.createElement("div");
+      line2.style.cssText = `font-size:9px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;`;
+      line2.textContent = translateReason(w.reason);
+
+      item.appendChild(line1);
+      item.appendChild(line2);
+      warningsDiv.appendChild(item);
+    }
+
+    card.appendChild(warningsDiv);
+  }
+
   return card;
 }
 
@@ -486,7 +705,12 @@ function updateNodeCardPositions(): void {
   }
 }
 
-function renderNodeCards(nodes: GraphNode[], edges: GraphEdge[]): void {
+function renderNodeCards(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  warningsByNode: Map<string, Warning[]>,
+  _depths: Map<string, number>,
+): void {
   clearNodeCards();
   if (!cy) return;
 
@@ -500,7 +724,8 @@ function renderNodeCards(nodes: GraphNode[], edges: GraphEdge[]): void {
   }
 
   for (const node of nodes) {
-    const card = createNodeCard(node, connCount.get(node.id) ?? 0, theme);
+    const warnings = warningsByNode.get(node.id) ?? [];
+    const card = createNodeCard(node, connCount.get(node.id) ?? 0, warnings, theme);
 
     // クリック: ソースへジャンプ
     card.addEventListener("click", () => {
@@ -554,13 +779,50 @@ function renderNodeCards(nodes: GraphNode[], edges: GraphEdge[]): void {
 }
 
 // ─────────────────────────────────────────
-// 警告 kind 推定
+// 警告 kind 推定 / 日本語変換
 // ─────────────────────────────────────────
 
 type WarningKind = "unmatched" | "excluded" | "parse";
 
+const REASON_JA: Record<string, string> = {
+  "unmatched-api-call": "未連携のAPIコール",
+  "unmatched-route": "未連携のルート",
+  "dynamic-url-unsupported": "URLを静的に解決できません",
+  "multiple-route-match": "複数のルートに一致するAPIコール",
+  "unsupported-decorator": "未対応のデコレーター",
+};
+
+function translateReason(reason: string): string {
+  if (REASON_JA[reason]) return REASON_JA[reason];
+  // パターンマッチ（フィクスチャ固有の長い英語文字列）
+  const r = reason.toLowerCase();
+  if (r.startsWith("syntax error")) {
+    const detail = reason.replace(/^syntax error:?\s*/i, "").trim();
+    if (!detail) return "構文エラー";
+    if (detail.toLowerCase().includes("missing end tag")) return "構文エラー：終了タグがありません";
+    return `構文エラー：${detail}`;
+  }
+  // "excluded api call" を先に判定（"statically" を含む場合に誤マッチしないよう順序に注意）
+  if (r.includes("excluded api call") || (r.includes("excluded") && r.includes("url"))) {
+    return "除外：URLを静的に決定できません";
+  }
+  if (
+    r.includes("statically resolved") ||
+    r.includes("statically determined") ||
+    r.includes("statically determinable") ||
+    r.includes("not statically")
+  ) {
+    return "ルートパスを静的に解決できません";
+  }
+  return reason;
+}
+
 function inferWarningKind(warning: Warning): WarningKind {
   const r = warning.reason;
+  // 英語の reason コード（route-linkage-engine 出力）
+  if (r === "dynamic-url-unsupported" || r === "multiple-route-match") return "excluded";
+  if (r === "unsupported-decorator") return "parse";
+  // 日本語フォールバック
   if (r.includes("除外") || r.includes("静的") || r.includes("URL")) return "excluded";
   if (r.includes("構文") || r.includes("解析") || r.includes("エラー") || r.includes("error"))
     return "parse";
@@ -578,153 +840,87 @@ const WARNING_KIND_COLOR: Record<WarningKind, string> = {
 // ─────────────────────────────────────────
 
 const WARNING_OVERLAY_CLASS = "warning-overlay";
-let warningOverlayCleanup: (() => void) | null = null;
 
 function clearWarningOverlays(): void {
-  if (warningOverlayCleanup) {
-    warningOverlayCleanup();
-    warningOverlayCleanup = null;
-  }
   for (const el of Array.from(graphContainer.querySelectorAll("." + WARNING_OVERLAY_CLASS))) {
     el.remove();
   }
 }
 
-function renderWarningOverlays(warnings: readonly Warning[], nodes: GraphNode[]): void {
-  if (!cy) return;
+/** 孤立警告（対応ノードが見つからない警告）をグラフ下部のセクションに表示する。 */
+function renderOrphanWarnings(orphans: Warning[]): void {
   clearWarningOverlays();
+  orphanSection.replaceChildren();
 
+  if (orphans.length === 0) {
+    orphanSection.style.display = "none";
+    return;
+  }
+
+  orphanSection.style.display = "block";
   const theme = buildTheme();
 
-  type OverlayEntry = {
-    nodeId: string;
-    items: { text: string; kind: WarningKind }[];
-  };
-  const overlayMap = new Map<string, OverlayEntry>();
+  // ヘッダ
+  const header = document.createElement("div");
+  header.style.cssText = `padding:6px 12px 4px;font-size:11px;font-weight:600;color:${theme.textSub};letter-spacing:.3px;`;
+  header.textContent = "該当ノードのない警告";
+  orphanSection.appendChild(header);
 
-  for (const warning of warnings) {
-    const kind = inferWarningKind(warning);
-    const matchedIds = findMatchingNodeIds(warning.target, nodes);
-    if (matchedIds.length > 0) {
-      for (const nodeId of matchedIds) {
-        if (!overlayMap.has(nodeId)) {
-          overlayMap.set(nodeId, { nodeId, items: [] });
-        }
-        overlayMap.get(nodeId)!.items.push({
-          text: `${warning.target}: ${warning.reason}`,
-          kind,
-        });
-      }
-    } else {
-      const key = "__orphan__";
-      if (!overlayMap.has(key)) overlayMap.set(key, { nodeId: key, items: [] });
-      overlayMap.get(key)!.items.push({ text: `${warning.target}: ${warning.reason}`, kind });
-    }
-  }
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 8px;";
 
-  const overlayEls: { el: HTMLElement; nodeId: string }[] = [];
+  for (const w of orphans) {
+    const kind = inferWarningKind(w);
+    const icon = kind === "excluded" ? "■" : kind === "parse" ? "◆" : "○";
+    const color = WARNING_KIND_COLOR[kind];
 
-  const baseOverlayStyle = (theme: ReturnType<typeof buildTheme>) =>
-    [
-      "position:absolute",
-      "z-index:10",
-      "pointer-events:auto",
+    const chip = document.createElement("div");
+    chip.className = WARNING_OVERLAY_CLASS;
+    chip.style.cssText = [
       `background:${theme.cardBg}`,
-      `border:1px solid ${theme.border}`,
-      "border-radius:3px",
-      "padding:3px 6px",
+      `border:1px solid ${color}40`,
+      "border-radius:4px",
+      "padding:3px 8px 3px 6px",
+      `border-left:3px solid ${color}`,
       "font-size:10px",
       "font-family:ui-monospace,Menlo,monospace",
-      `color:${theme.textSub}`,
-      "white-space:nowrap",
-      "cursor:pointer",
-      "max-width:220px",
-      "overflow:hidden",
-      "text-overflow:ellipsis",
+      "max-width:320px",
     ].join(";");
 
-  for (const [key, entry] of overlayMap) {
-    const div = document.createElement("div");
-    div.className = WARNING_OVERLAY_CLASS;
-    div.style.cssText = baseOverlayStyle(theme);
+    const l1 = document.createElement("div");
+    l1.style.cssText = `color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;`;
+    l1.textContent = `${icon} ${w.target}`;
 
-    for (const item of entry.items) {
-      const line = document.createElement("div");
-      line.style.cssText = `border-left:3px solid ${WARNING_KIND_COLOR[item.kind]};padding-left:4px;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
-      line.textContent = item.text;
-      div.appendChild(line);
-    }
+    const l2 = document.createElement("div");
+    l2.style.cssText = `font-size:9px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
+    l2.textContent = translateReason(w.reason);
 
-    if (key === "__orphan__") {
-      // 孤立警告: グラフコンテナ底部左に固定表示
-      div.style.bottom = "8px";
-      div.style.left = "8px";
-      div.style.top = "";
-    } else {
-      div.addEventListener("mouseenter", () => {
-        const node = cy!.getElementById(entry.nodeId);
-        if (node.length) {
-          cy!.elements().addClass("dim");
-          node.closedNeighborhood().removeClass("dim");
-          // 対応カードを強調
-          for (const { el, nodeId: nid } of nodeCardEls) {
-            el.style.opacity = nid === entry.nodeId ? "" : "0.24";
-          }
-        }
-      });
-      div.addEventListener("mouseleave", () => {
-        cy!.elements().removeClass("dim");
-        for (const { el } of nodeCardEls) el.style.opacity = "";
-      });
-      div.addEventListener("click", () => {
-        const node = cy!.getElementById(entry.nodeId);
-        if (node.length) {
-          cy!.elements().removeClass("dim").unselect();
-          node.select();
-          cy!.animate({ center: { eles: node }, duration: 200 });
-        }
-      });
-      overlayEls.push({ el: div, nodeId: entry.nodeId });
-    }
-
-    graphContainer.appendChild(div);
+    chip.appendChild(l1);
+    chip.appendChild(l2);
+    list.appendChild(chip);
   }
 
-  // ノード直下へ位置更新
-  const updatePositions = () => {
-    for (const { el, nodeId } of overlayEls) {
-      const node = cy!.getElementById(nodeId);
-      if (!node.length) continue;
-      const bb = node.renderedBoundingBox({ includeLabels: false });
-      el.style.left = `${bb.x1}px`;
-      el.style.top = `${bb.y2 + 4}px`;
-      el.style.width = `${Math.max(bb.x2 - bb.x1, 100)}px`;
-    }
-  };
-
-  cy.on("render pan zoom resize", updatePositions);
-  updatePositions();
-
-  warningOverlayCleanup = () => {
-    cy?.off("render pan zoom resize", updatePositions);
-  };
+  orphanSection.appendChild(list);
 }
 
 // ─────────────────────────────────────────
 // グラフ描画
 // ─────────────────────────────────────────
 
-function toElementDefinitions(nodes: GraphNode[], edges: GraphEdge[]): ElementDefinition[] {
-  const positions = buildPresetPositions(nodes, edges);
-
+function toElementDefinitions(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  positions: Record<string, { x: number; y: number }>,
+): ElementDefinition[] {
   const nodeElements: ElementDefinition[] = nodes.map((node) => ({
     data: { ...node, label: "" },
     position: positions[node.id],
   }));
 
-  const edgeElements: ElementDefinition[] = edges.map((edge) => ({
-    data: { ...edge },
-  }));
+  // structural エッジはツリーガイド SVG で描画するため Cytoscape から除外
+  const edgeElements: ElementDefinition[] = edges
+    .filter((e) => e.kind === "linkage")
+    .map((edge) => ({ data: { ...edge } }));
 
   return [...nodeElements, ...edgeElements];
 }
@@ -744,9 +940,23 @@ function renderGraph(): void {
   const frontendCount = nodes.filter((n) => n.side === "frontend").length;
   const backendCount = nodes.filter((n) => n.side === "backend").length;
 
-  renderBackgroundZones(frontendCount, backendCount);
+  // 警告マップをレイアウト前に構築（動的行間隔の計算に必要）
+  const warningsByNode = new Map<string, Warning[]>();
+  const orphanWarnings: Warning[] = [];
+  for (const w of currentOutput.warnings) {
+    const matchedIds = findMatchingNodeIds(w.target, nodes);
+    if (matchedIds.length > 0) {
+      for (const nodeId of matchedIds) {
+        if (!warningsByNode.has(nodeId)) warningsByNode.set(nodeId, []);
+        warningsByNode.get(nodeId)!.push(w);
+      }
+    } else {
+      orphanWarnings.push(w);
+    }
+  }
 
-  const elements = toElementDefinitions(nodes, edges);
+  const { positions, depths, primaryParentOf } = computeLayout(nodes, edges, warningsByNode);
+  const elements = toElementDefinitions(nodes, edges, positions);
 
   cy?.destroy();
   cy = cytoscape({
@@ -762,6 +972,9 @@ function renderGraph(): void {
     userPanningEnabled: true,
     boxSelectionEnabled: false,
   });
+
+  // ゾーンは cy 生成後に追加してキャンバス上に表示（z-index:2 > canvas:auto）
+  renderBackgroundZones(frontendCount, backendCount);
 
   // ノードタップ（不可視ノード上のクリックも Cytoscape が受け取る場合の fallback）
   cy.on("tap", "node", (event) => {
@@ -791,8 +1004,9 @@ function renderGraph(): void {
     cy!.elements().removeClass("dim hi");
   });
 
-  renderNodeCards(nodes, edges);
-  renderWarningOverlays(currentOutput.warnings, nodes);
+  renderNodeCards(nodes, edges, warningsByNode, depths);
+  renderTreeGuides(nodes, edges, depths, primaryParentOf);
+  renderOrphanWarnings(orphanWarnings);
 }
 
 window.addEventListener("message", (event: MessageEvent<HostToWebviewMessage>) => {

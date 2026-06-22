@@ -63,18 +63,26 @@ async function main() {
     await new Promise((r) => setTimeout(r, 1500));
     await shot(page, "02-graph-file-depth-breadthfirst");
 
-    console.log("=== Step 4: 警告オーバーレイの確認 ===");
+    console.log("=== Step 4: 警告表示の確認（ルート深度）===");
     await webviewFrame.locator('button[data-value="route"]').click();
     await new Promise((r) => setTimeout(r, 1500));
     await shot(page, "03-warning-overlay-route");
-    // 警告オーバーレイが存在すればホバー確認
+
+    // 警告ホバー確認（warning-overlay は孤立警告のみ。カード内警告はカードにホバー）
     const overlayCount = await webviewFrame.locator(".warning-overlay").count();
     console.log("warning-overlay count:", overlayCount);
-    if (overlayCount > 0) {
-      await webviewFrame.locator(".warning-overlay").first().hover();
-      await new Promise((r) => setTimeout(r, 1000));
+    const cardCount = await webviewFrame.locator(".node-card").count();
+    console.log("node-card count:", cardCount);
+    if (cardCount > 0) {
+      await webviewFrame.locator(".node-card").first().hover();
+      await new Promise((r) => setTimeout(r, 800));
       await shot(page, "04-warning-overlay-hover");
     }
+
+    console.log("=== Step 5: 関数単位 深度 ===");
+    await webviewFrame.locator('button[data-value="function"]').click();
+    await new Promise((r) => setTimeout(r, 1500));
+    await shot(page, "05-graph-function-depth");
   }
 
   await new Promise((r) => setTimeout(r, 1000));

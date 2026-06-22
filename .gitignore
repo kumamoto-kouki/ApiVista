@@ -15,7 +15,9 @@ __pycache__/
 .DS_Store
 .demo-screenshots
 .verify-screenshots
+.kiro/specs/vscode-extension-ui/design/screenshots/
 .env
+
 
 # Claude Code ローカル設定(context-mode トライアル等のローカル限定設定。コミットしない)
 .claude/settings.local.json
