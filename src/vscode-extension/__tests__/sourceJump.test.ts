@@ -155,7 +155,10 @@ describe("sourceJump.reveal", () => {
 
     const { reveal } = await import("../sourceJump.js");
 
-    await expect(reveal({ file: "backend/missing.py", line: 1 })).rejects.toBe(originalError);
+    // 複数候補すべてが失敗した場合、ファイルパスと行番号を含むエラーをthrowする（握り潰さない）
+    await expect(reveal({ file: "backend/missing.py", line: 1 })).rejects.toThrow(
+      "backend/missing.py:1 を開けませんでした",
+    );
   });
 
   it("ワークスペースフォルダが開かれていない場合(undefined)、showTextDocumentを呼ばずにエラーをthrowする", async () => {

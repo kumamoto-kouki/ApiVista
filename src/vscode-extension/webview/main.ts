@@ -127,14 +127,14 @@ function renderLegend(container: HTMLElement): void {
   const kinds: NodeKind[] = ["route", "apiCall", "file", "function"];
   for (const kind of kinds) {
     const entry = document.createElement("span");
-    entry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11px;";
+    entry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:13px;";
 
     const badge = document.createElement("span");
     badge.textContent = NODE_INITIALS[kind];
     badge.style.cssText = [
       `background:${theme[kind]}`,
       "color:#1f1f1f",
-      "font-size:9px",
+      "font-size:11px",
       "font-weight:700",
       "padding:1px 5px",
       "border-radius:3px",
@@ -152,7 +152,7 @@ function renderLegend(container: HTMLElement): void {
 
   // 未連携
   const unmatchedEntry = document.createElement("span");
-  unmatchedEntry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11px;";
+  unmatchedEntry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:13px;";
   const unmatchedBox = document.createElement("span");
   unmatchedBox.style.cssText = `display:inline-block;width:12px;height:12px;border:2px dashed ${theme.unmatched};border-radius:2px;`;
   const unmatchedLabel = document.createElement("span");
@@ -170,7 +170,7 @@ function renderLegend(container: HTMLElement): void {
 
   // エッジ凡例
   const linkageEntry = document.createElement("span");
-  linkageEntry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11px;";
+  linkageEntry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:13px;";
   const linkageLine = document.createElement("span");
   linkageLine.textContent = "→";
   linkageLine.style.cssText = `color:${theme.edge};font-weight:700;`;
@@ -182,7 +182,7 @@ function renderLegend(container: HTMLElement): void {
   container.appendChild(linkageEntry);
 
   const structEntry = document.createElement("span");
-  structEntry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11px;";
+  structEntry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:13px;";
   const structLine = document.createElement("span");
   structLine.textContent = "⌐→";
   structLine.style.cssText = `color:${theme.edge};font-weight:700;`;
@@ -943,7 +943,7 @@ function renderOrphanWarnings(orphans: Warning[]): void {
 
   // ヘッダ
   const header = document.createElement("div");
-  header.style.cssText = `padding:6px 12px 4px;font-size:11px;font-weight:600;color:${theme.textSub};letter-spacing:.3px;`;
+  header.style.cssText = `padding:6px 12px 4px;font-size:13px;font-weight:600;color:${theme.textSub};letter-spacing:.3px;`;
   header.textContent = "該当ノードのない警告";
   orphanSection.appendChild(header);
 
@@ -963,7 +963,7 @@ function renderOrphanWarnings(orphans: Warning[]): void {
       "border-radius:4px",
       "padding:3px 8px 3px 6px",
       `border-left:3px solid ${color}`,
-      "font-size:10px",
+      "font-size:12px",
       "font-family:ui-monospace,Menlo,monospace",
       "max-width:320px",
     ].join(";");
@@ -973,7 +973,7 @@ function renderOrphanWarnings(orphans: Warning[]): void {
     l1.textContent = `${icon} ${w.target}`;
 
     const l2 = document.createElement("div");
-    l2.style.cssText = `font-size:9px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
+    l2.style.cssText = `font-size:11px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
     l2.textContent = translateReason(w.reason);
 
     chip.appendChild(l1);
@@ -1051,6 +1051,7 @@ function renderGraph(): void {
     },
     userZoomingEnabled: true,
     userPanningEnabled: true,
+    autoungrabify: true,
     boxSelectionEnabled: false,
   });
 

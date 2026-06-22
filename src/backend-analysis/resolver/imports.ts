@@ -86,6 +86,27 @@ export function resolveImportQualifiedName(
     }
   }
 
+  // rootSegment 付きで再試行する（絶対 import で rootSegment を省略するパターン対応）。
+  // 例: backendRoot="backend" → moduleMap キーは "backend.routers.posts" だが、
+  //     Python コード上の import は "from routers import posts"（"backend." 省略）。
+  const rootSegment = currentModule.split(".")[0];
+  if (
+    rootSegment !== undefined &&
+    rootSegment.length > 0 &&
+    !absolute.startsWith(`${rootSegment}.`)
+  ) {
+    const withRoot = `${rootSegment}.${absolute}`;
+    const withRootSegments = withRoot.split(".");
+    for (let end = withRootSegments.length; end >= 1; end -= 1) {
+      const candidate = withRootSegments.slice(0, end).join(".");
+      if (map.moduleToPath.has(candidate)) {
+        const name = withRootSegments.slice(end).join(".");
+        const targetFileId = map.moduleToPath.get(candidate) ?? null;
+        return { moduleDotted: candidate, name, targetFileId };
+      }
+    }
+  }
+
   // フォールバック: 末尾セグメントを名前、残りをモジュール（外部の可能性）とみなす。
   if (segments.length <= 1) {
     return { moduleDotted: absolute, name: "", targetFileId: null };

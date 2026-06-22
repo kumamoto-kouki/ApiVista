@@ -24,10 +24,25 @@ export async function reveal(location: SourceLocation): Promise<void> {
     throw new Error("ワークスペースフォルダが開かれていません。ソースジャンプを実行できません。");
   }
 
-  const uri = vscode.Uri.joinPath(workspaceFolder.uri, location.file);
-  const editor = await vscode.window.showTextDocument(uri);
+  // sourceLocation.file は backend/ または frontend/ 相対パスのため、
+  // ワークスペースルート直下→frontend/配下→backend/配下の順で試みる
+  const candidates = [
+    vscode.Uri.joinPath(workspaceFolder.uri, location.file),
+    vscode.Uri.joinPath(workspaceFolder.uri, "frontend", location.file),
+    vscode.Uri.joinPath(workspaceFolder.uri, "backend", location.file),
+  ];
 
-  const position = new vscode.Position(location.line - 1, 0);
-  editor.selection = new vscode.Selection(position, position);
-  editor.revealRange(new vscode.Range(position, position));
+  for (const uri of candidates) {
+    try {
+      const editor = await vscode.window.showTextDocument(uri);
+      const position = new vscode.Position(location.line - 1, 0);
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position));
+      return;
+    } catch {
+      // 次の候補を試みる
+    }
+  }
+
+  throw new Error(`${location.file}:${location.line} を開けませんでした`);
 }
