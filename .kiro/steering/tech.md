@@ -17,7 +17,7 @@ ApiVista は単一の VSCode 拡張機能であり、全構成要素を **TypeSc
 開発パターンに影響する主要ライブラリのみ記載する。
 
 - **ts-morph**: フロントエンド(Nuxt.js Vue/TS)解析。純 JavaScript/TypeScript 実装でネイティブ依存なし。
-- **web-tree-sitter(WASM)**: バックエンド(FastAPI/Python)解析。Python 文法は Microsoft 公式の [`@vscode/tree-sitter-wasm`](https://www.npmjs.com/package/@vscode/tree-sitter-wasm) が提供するプリビルド `.wasm` を使用する。
+- **web-tree-sitter(WASM)**: バックエンド(FastAPI/Python)解析。パーサエンジン本体は `web-tree-sitter`、Python 文法のプリビルド `.wasm` は [`tree-sitter-wasms`](https://www.npmjs.com/package/tree-sitter-wasms) を使用する。ビルド時に `npm run copy-wasm` で `media/wasm/` へコピーし、インストール済み拡張では `context.extensionUri` 経由でパスを解決する。
 
 ## Development Standards
 
@@ -31,7 +31,13 @@ ApiVista は単一の VSCode 拡張機能であり、全構成要素を **TypeSc
 - **VSCode 上で完結させる(ブラウザ不使用)**:
   - 拡張本体(アクティベーション・コマンド・ワークスペーススキャン・ファイル監視)の統合テストは `@vscode/test-electron`(実 VSCode/Electron 起動)で行う。
   - Webview 内ロジック・解析ロジックの単体テストは `vitest`(+ `jsdom`、`acquireVsCodeApi` はモック)で行う。
-  - ブラウザ操作による E2E(Playwright 等)は採用しない。VSCode 拡張の Webview は Electron 内でホストされ、ブラウザ E2E は実環境との差異が大きいため。
+  - ブラウザ操作による E2E(Playwright 等)は**プロダクションテストとして採用しない**。VSCode 拡張の Webview は Electron 内でホストされ、ブラウザ E2E は実環境との差異が大きいため。
+  - ただし VSIX パッケージ検証・リリース前スクリーンショット取得には `playwright-core` の `_electron` API を使った Playwright Electron スクリプト(`.verify-blog-api.mjs` / `.verify-vsix.mjs`)を補助的に使用する。
+
+### VSIX パッケージング
+- `npm run package` で `apivista-{version}.vsix` を生成する(`@vscode/vsce` 使用)。
+- VSIX から除外すべきファイルは `.vscodeignore` で管理する(`.venv/`・`src/`・`.kiro/` 等)。
+- `tree-sitter-wasms` は `.wasm` ファイルのコピーにのみ必要なため `devDependencies` に置き、VSIX に含めない。`web-tree-sitter`(JS バインディング)は実行時に必要なため `dependencies` に置く。
 
 ## Key Technical Decisions
 

@@ -55,7 +55,7 @@ flowchart LR
   RL -->|3階層連携データ| UI
 ```
 
-- [ ] backend-route-extractor -- FastAPIのPythonコードを TypeScript + web-tree-sitter(WASM)で AST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する。Dependencies: none
-- [ ] frontend-call-extractor -- Nuxt.jsのVue/TSコードを解析し、API呼び出し(URL・method・呼び出し元位置)とコンポーネント/関数単位の呼び出しグラフを抽出する。Dependencies: none
-- [ ] route-linkage-engine -- バックエンド/フロントエンドの抽出結果を受け取り、URLパス静的マッチング+OpenAPIスキーマ照合のハイブリッドでルートとAPI呼び出しを連携付け、3階層のデータモデルを構築する。Dependencies: backend-route-extractor, frontend-call-extractor
-- [ ] vscode-extension-ui -- VSCode拡張本体(アクティベーション、ワークスペーススキャン、ファイル監視、コマンド)とWebviewによるグラフ可視化(深度切り替え、ソースジャンプ)を実装する。Dependencies: route-linkage-engine
+- [x] backend-route-extractor -- FastAPIのPythonコードを TypeScript + web-tree-sitter(WASM)で AST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する。Dependencies: none
+- [x] frontend-call-extractor -- Nuxt.jsのVue/TSコードを解析し、API呼び出し(URL・method・呼び出し元位置)とコンポーネント/関数単位の呼び出しグラフを抽出する。Dependencies: none
+- [x] route-linkage-engine -- バックエンド/フロントエンドの抽出結果を受け取り、URLパス静的マッチング+OpenAPIスキーマ照合のハイブリッドでルートとAPI呼び出しを連携付け、3階層のデータモデルを構築する。Dependencies: backend-route-extractor, frontend-call-extractor
+- [x] vscode-extension-ui -- VSCode拡張本体(アクティベーション、ワークスペーススキャン、ファイル監視、コマンド)とWebviewによるグラフ可視化(深度切り替え、ソースジャンプ)を実装する。Dependencies: route-linkage-engine

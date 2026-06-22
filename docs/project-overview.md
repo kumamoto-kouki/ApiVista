@@ -25,7 +25,7 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 ## 技術スタック
 
 - **拡張本体**: TypeScript(VSCode Extension API)
-- **バックエンド解析**: TypeScript + web-tree-sitter(WASM、Python文法は `@vscode/tree-sitter-wasm`)による FastAPI/Python の AST解析
+- **バックエンド解析**: TypeScript + web-tree-sitter(WASM、Python文法は `tree-sitter-wasms`)による FastAPI/Python の AST解析
 - **フロントエンド解析**: TypeScript + ts-morph による Nuxt.js(Vue/TS)の解析
 - **フロントエンド解析対象**: Nuxt.js(Vue/TS)
 - **実行環境**: 全解析は拡張ホスト(Node/Electron)上で動作し、エンドユーザーに Python/uv 等の外部ランタイムを要求しない

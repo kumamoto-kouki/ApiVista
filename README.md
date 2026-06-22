@@ -23,14 +23,44 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 ## 技術スタック
 
 - **拡張本体**: TypeScript(VSCode Extension API)
-- **バックエンド解析**: TypeScript + web-tree-sitter(WASM、Python文法は `@vscode/tree-sitter-wasm`)による FastAPI/Python の AST解析
+- **バックエンド解析**: TypeScript + web-tree-sitter(WASM、Python文法は `tree-sitter-wasms`)による FastAPI/Python の AST解析
 - **フロントエンド解析**: TypeScript + ts-morph による Nuxt.js(Vue/TS)の解析
 - **フロントエンド解析対象**: Nuxt.js(Vue/TS)
 - **実行環境**: 全解析は拡張ホスト(Node/Electron)上で動作し、エンドユーザーに Python/uv 等の外部ランタイムを要求しない
 - **ツール構成**: ESLint / Prettier、Vitest(+jsdom)、`@vscode/test-electron`(テスト)
 - **AI開発支援**: Kiro-style Spec-Driven Development、MCPサーバー群(下記参照)
 
-## MCPサーバー構成
+## AI駆動開発で使用した技術
+
+本プロジェクトは **Agentic SDLC(エージェント型ソフトウェア開発ライフサイクル)** で構築されました。コード生成からレビュー・検証まで、すべてのフェーズで AI を中心的に活用しています。
+
+### AI アシスタント
+
+| ツール | バージョン/モデル | 用途 |
+| --- | --- | --- |
+| **Claude Code** (Anthropic) | claude-sonnet-4-6 | 実装・リファクタリング・デバッグ・ドキュメント生成の主エンジン |
+| **Claude Opus** (Anthropic) | claude-opus-4-x | 設計フェーズのアーキテクチャレビュー(`/kiro-spec-design`, `/kiro-validate-design`) |
+
+### 開発方法論
+
+| 方法論 | 説明 |
+| --- | --- |
+| **Kiro-style Spec-Driven Development** | Discovery → Requirements(EARS形式) → Design → Tasks → Implementation の5フェーズで仕様を先に固め、AI が実装する構造化手法 |
+| **Agentic SDLC** | サブエージェントを並列ディスパッチして探索・実装・レビューを自律的に進めるワークフロー |
+
+主なスキル(`/.claude/skills/kiro-*/`):
+
+| スキル | フェーズ | 役割 |
+| --- | --- | --- |
+| `kiro-spec-init` / `kiro-spec-requirements` | 要件定義 | EARS形式の要件文書を生成 |
+| `kiro-spec-design` | 設計 | アーキテクチャ設計・境界コミットメント定義 |
+| `kiro-spec-tasks` | タスク化 | 実装タスクの分割と依存順序の整理 |
+| `kiro-impl` | 実装 | タスク単位の自律実装(サブエージェント+レビュアー) |
+| `kiro-validate-impl` | 検証 | クロスタスク統合・要件カバレッジの検証 |
+| `kiro-review` | レビュー | タスク局所の敵対的レビュー |
+| `kiro-verify-completion` | 完了ゲート | 成功主張前の証拠検証 |
+
+### MCPサーバー構成
 
 `.mcp.json` で以下のMCPサーバーを構成しています。ツール数の肥大化を避けるため、既存ツール(`gh` CLIや拡張思考)と役割が重複するサーバーは導入していません。
 
@@ -52,23 +82,36 @@ export CONTEXT7_API_KEY="..."  # context7.com で取得(任意)
 
 ## スペック構成(依存関係順)
 
-プロジェクトは技術領域ごとに4つのスペックに分割されています。
+プロジェクトは技術領域ごとに4つのスペックに分割されています。全スペック実装済み。
 
-| 順序 | スペック名 | 内容 | 依存 |
-| --- | --- | --- | --- |
-| 1 | `backend-route-extractor` | FastAPIのPythonコードを TypeScript + web-tree-sitter(WASM)で AST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する | なし |
-| 2 | `frontend-call-extractor` | Nuxt.jsのVue/TSコードを解析し、API呼び出し(URL・method・呼び出し元位置)とコンポーネント/関数単位の呼び出しグラフを抽出する | なし |
-| 3 | `route-linkage-engine` | バックエンド/フロントエンドの抽出結果を受け取り、URLパス静的マッチング+OpenAPIスキーマ照合のハイブリッドでルートとAPI呼び出しを連携付け、3階層のデータモデルを構築する | 1, 2 |
-| 4 | `vscode-extension-ui` | VSCode拡張本体(アクティベーション、ワークスペーススキャン、ファイル監視、コマンド)とWebviewによるグラフ可視化(深度切り替え、ソースジャンプ)を実装する | 3 |
+| 順序 | スペック名 | 内容 | 依存 | 状態 |
+| --- | --- | --- | --- | --- |
+| 1 | `backend-route-extractor` | FastAPIのPythonコードを TypeScript + web-tree-sitter(WASM)で AST解析し、ルート定義(パス・method・OpenAPIスキーマ参照)とファイル/関数単位の呼び出しグラフを抽出する | なし | ✅ 完了 |
+| 2 | `frontend-call-extractor` | Nuxt.jsのVue/TSコードを解析し、API呼び出し(URL・method・呼び出し元位置)とコンポーネント/関数単位の呼び出しグラフを抽出する | なし | ✅ 完了 |
+| 3 | `route-linkage-engine` | バックエンド/フロントエンドの抽出結果を受け取り、URLパス静的マッチング+OpenAPIスキーマ照合のハイブリッドでルートとAPI呼び出しを連携付け、3階層のデータモデルを構築する | 1, 2 | ✅ 完了 |
+| 4 | `vscode-extension-ui` | VSCode拡張本体(アクティベーション、ワークスペーススキャン、ファイル監視、コマンド)とWebviewによるグラフ可視化(深度切り替え、ソースジャンプ)を実装する | 3 | ✅ 完了 |
 
 抽出器(1, 2)は互いに依存せず並行実装が可能です。
 
-## セットアップ方法
+## インストール方法
+
+### VSIX から拡張機能をインストール
+
+```bash
+code --install-extension apivista-0.1.0.vsix
+```
+
+VSCode の拡張機能パネル → 「...」→「VSIXからインストール」でも同様に導入できます。
+
+### 開発環境のセットアップ
 
 本プロジェクトは単一の VSCode 拡張機能(TypeScript)であり、拡張本体・全解析器とも `npm` で完結します。エンドユーザーに Python/uv 等の外部ランタイムは不要です。
 
 ```bash
-npm install
+npm install       # 依存インストール
+npm run build     # TypeScript コンパイル + Webview バンドル + WASM コピー
+npm test          # テスト実行
+npm run package   # apivista-{version}.vsix を生成
 ```
 
 > 注: backend-route-extractor は TypeScript + web-tree-sitter(WASM)で実装されています(旧 Python 実装は撤去済み)。解析対象の Python ソースは `tests/fixtures/sample_app/` にテスト入力としてのみ存在します。
