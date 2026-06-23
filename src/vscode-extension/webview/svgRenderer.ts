@@ -12,10 +12,28 @@ const INDENT_X = 60;
 let treeGuideSvg: SVGSVGElement | null = null;
 let treeGuideUpdateFn: (() => void) | null = null;
 let linkageSvg: SVGSVGElement | null = null;
-let linkageLineEls: { el: SVGPathElement; sourceId: string; targetId: string }[] = [];
+let linkageUpdateFn: (() => void) | null = null;
 
-export function getLinkageLineEls(): { el: SVGPathElement; sourceId: string; targetId: string }[] {
-  return linkageLineEls;
+/**
+ * ホバー連鎖の到達ノード集合。`null` のときは減光なし（全線不透明）。
+ * ツリーガイド/連携線の updateFn が参照し、両端が集合内の線のみを不透明に保つ。
+ */
+let hoverReachable: Set<string> | null = null;
+
+/** 両端 ID が到達集合に含まれる線の不透明度を返す（`hoverReachable===null` は常に不透明）。 */
+function lineOpacity(aId: string, bId: string): string {
+  if (hoverReachable === null) return "1";
+  return hoverReachable.has(aId) && hoverReachable.has(bId) ? "1" : "0.24";
+}
+
+/**
+ * ホバー連鎖の到達集合を設定し、ツリーガイド・連携線を即時再描画して減光を反映する。
+ * `null` を渡すと減光を解除する。
+ */
+export function setHoverReachable(set: Set<string> | null): void {
+  hoverReachable = set;
+  treeGuideUpdateFn?.();
+  linkageUpdateFn?.();
 }
 
 export function clearTreeGuides(cy?: Core): void {
@@ -25,12 +43,14 @@ export function clearTreeGuides(cy?: Core): void {
   }
   treeGuideSvg?.remove();
   treeGuideSvg = null;
+  hoverReachable = null;
 }
 
 export function clearLinkageLines(): void {
   linkageSvg?.remove();
   linkageSvg = null;
-  linkageLineEls = [];
+  linkageUpdateFn = null;
+  hoverReachable = null;
 }
 
 export function renderTreeGuides(
@@ -82,7 +102,7 @@ export function renderTreeGuides(
       const pBottomY = pp.y * zoom + pan.y + (NODE_CARD_H / 2 + pWarnCount * WARNING_ITEM_H) * zoom;
       const guideX = pVisualCenterX - (NODE_CARD_W / 2) * zoom + 14 * zoom;
 
-      const childData: { y: number; x: number; color: string }[] = [];
+      const childData: { id: string; y: number; x: number; color: string }[] = [];
       for (const cid of childIds) {
         const cCyNode = cy.getElementById(cid);
         if (!cCyNode.length) continue;
@@ -95,13 +115,14 @@ export function renderTreeGuides(
         const color = childNode
           ? ((theme[childNode.kind as NodeKind] as string | undefined) ?? theme.edge)
           : theme.edge;
-        childData.push({ y: cCenterY, x: cVisualCenterX, color });
+        childData.push({ id: cid, y: cCenterY, x: cVisualCenterX, color });
       }
       if (childData.length === 0) continue;
 
-      for (const { y: childCenterY, x: cVisualCenterX, color } of childData) {
+      for (const { id: childId, y: childCenterY, x: cVisualCenterX, color } of childData) {
         const childCardLeft = cVisualCenterX - (NODE_CARD_W / 2) * zoom;
         const arrowTip = childCardLeft;
+        const opacity = lineOpacity(parentId, childId);
 
         const curvePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
         curvePath.setAttribute(
@@ -111,6 +132,7 @@ export function renderTreeGuides(
         curvePath.setAttribute("stroke", color);
         curvePath.setAttribute("stroke-width", "1.5");
         curvePath.setAttribute("fill", "none");
+        curvePath.setAttribute("opacity", opacity);
         svg.appendChild(curvePath);
 
         const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -119,6 +141,7 @@ export function renderTreeGuides(
           `M${arrowTip - 8},${childCenterY - 4.5} L${arrowTip},${childCenterY} L${arrowTip - 8},${childCenterY + 4.5} Z`,
         );
         arrow.setAttribute("fill", color);
+        arrow.setAttribute("opacity", opacity);
         svg.appendChild(arrow);
       }
     }
@@ -178,14 +201,13 @@ export function renderLinkageLines(
   defs.appendChild(marker);
   svg.appendChild(defs);
 
-  const pathEls: SVGPathElement[] = edgeDataList.map(({ sourceId, targetId }) => {
+  const pathEls: SVGPathElement[] = edgeDataList.map(() => {
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", theme.edge);
     path.setAttribute("stroke-width", "2");
     path.setAttribute("marker-end", "url(#linkage-arrow)");
     svg.appendChild(path);
-    linkageLineEls.push({ el: path, sourceId, targetId });
     return path;
   });
 
@@ -211,9 +233,11 @@ export function renderLinkageLines(
         "d",
         `M${srcRightX},${srcY} C${midX},${srcY} ${midX},${tgtY} ${tgtLeftX},${tgtY}`,
       );
+      pathEls[i].setAttribute("opacity", lineOpacity(sourceId, targetId));
     });
   };
 
+  linkageUpdateFn = updateFn;
   cy.on("render pan zoom resize", updateFn);
   updateFn();
 }

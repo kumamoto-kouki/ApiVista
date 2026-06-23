@@ -22,7 +22,7 @@ export interface LanguageStyle {
 const PYTHON: LanguageStyle = {
   id: "python",
   label: "Python",
-  color: "#3776AB",
+  color: "#306998",
   // 2 つの絡み合うブロック（Python ロゴの簡略表現）。
   iconSvg:
     '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">' +

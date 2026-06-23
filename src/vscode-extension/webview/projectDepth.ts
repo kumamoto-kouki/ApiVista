@@ -25,7 +25,7 @@
  * Postconditionを優先する防御的実装。route-linkage-engineの契約違反を検出する責務は
  * 本モジュールの範囲外)。
  */
-import type { ApiCallRef, LinkageOutput, RouteRef } from "../../route-linkage/models.js";
+import type { ApiCallRef, LinkageOutput, RouteRef, Warning } from "../../route-linkage/models.js";
 
 export type Depth = "route" | "file" | "function";
 
@@ -143,6 +143,8 @@ function projectFileDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: G
     side: file.side,
     label: file.path,
     unmatched: false,
+    // ファイル枠もコードジャンプ可能にする（ファイル先頭へ）。path は side ルート相対。
+    sourceLocation: { file: file.path, line: 1 },
   }));
 
   const fileIds = new Set(output.files.map((file) => file.id));
@@ -284,4 +286,22 @@ export function projectDepth(
  */
 export function findMatchingNodeIds(target: string, nodes: readonly GraphNode[]): string[] {
   return nodes.filter((node) => node.label.includes(target)).map((node) => node.id);
+}
+
+/**
+ * `Warning` を対応する `GraphNode` id 集合へマッチさせる。
+ *
+ * 基本は `findMatchingNodeIds`（label 部分一致）だが、`unmatched-route` /
+ * `unmatched-api-call` 診断は target に method を含まず path のみのため、同一 path の
+ * **連携済みノード**にも部分一致してしまう。これらの reason に限り、対応する kind かつ
+ * `unmatched===true` のノードへ限定し、連携済みノードへの誤付着を防ぐ。
+ */
+export function matchWarningNodeIds(warning: Warning, nodes: readonly GraphNode[]): string[] {
+  const baseIds = new Set(findMatchingNodeIds(warning.target, nodes));
+  const restrictTo = (kind: GraphNode["kind"]): string[] =>
+    nodes.filter((n) => n.kind === kind && n.unmatched && baseIds.has(n.id)).map((n) => n.id);
+
+  if (warning.reason === "unmatched-route") return restrictTo("route");
+  if (warning.reason === "unmatched-api-call") return restrictTo("apiCall");
+  return [...baseIds];
 }

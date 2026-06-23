@@ -16,6 +16,7 @@ import type {
 } from "../../../route-linkage/models.js";
 import {
   findMatchingNodeIds,
+  matchWarningNodeIds,
   projectDepth,
   type Depth,
   type GraphEdge,
@@ -177,6 +178,9 @@ describe("projectDepth", () => {
 
       expect(nodes).toHaveLength(2);
       expect(nodes.every((n) => n.kind === "file" && n.unmatched === false)).toBe(true);
+      // ファイル枠もコードジャンプ可能にするため sourceLocation（path, line:1）を持つ
+      const fileA = nodes.find((n) => n.id === "backend:file-a");
+      expect(fileA?.sourceLocation).toEqual({ file: "backend/a.ts", line: 1 });
       const structuralEdges = edges.filter((e) => e.kind === "structural");
       expect(structuralEdges).toHaveLength(1);
       expect(structuralEdges[0].source).toBe("backend:file-a");
@@ -432,5 +436,58 @@ describe("findMatchingNodeIds", () => {
     const nodes = [node({ id: "route:1", label: "GET /api/users" })];
 
     expect(findMatchingNodeIds("/api/unknown", nodes)).toEqual([]);
+  });
+});
+
+describe("matchWarningNodeIds", () => {
+  function node(overrides: Partial<GraphNode> = {}): GraphNode {
+    return {
+      id: "n1",
+      kind: "route",
+      side: "backend",
+      label: "GET /api/posts/{post_id}",
+      unmatched: false,
+      ...overrides,
+    };
+  }
+
+  it("unmatched-route 警告は同一 path の連携済みルートには付かず、未連携ルートのみに付く", () => {
+    const nodes = [
+      // 連携済み（同一 path だが別メソッド等）
+      node({ id: "route:matched", label: "GET /api/posts/{post_id}", unmatched: false }),
+      // 未連携（警告対象）
+      node({ id: "route:unmatched", label: "PUT /api/posts/{post_id}", unmatched: true }),
+    ];
+    const ids = matchWarningNodeIds(
+      { target: "/api/posts/{post_id}", reason: "unmatched-route" },
+      nodes,
+    );
+    expect(ids).toEqual(["route:unmatched"]);
+  });
+
+  it("unmatched-api-call 警告は未連携の apiCall ノードのみに付く", () => {
+    const nodes = [
+      node({ id: "api:matched", kind: "apiCall", label: "GET /api/posts/{}", unmatched: false }),
+      node({ id: "api:unmatched", kind: "apiCall", label: "POST /api/posts/{}", unmatched: true }),
+      // 別 kind は対象外
+      node({ id: "route:x", kind: "route", label: "POST /api/posts/{}", unmatched: true }),
+    ];
+    const ids = matchWarningNodeIds(
+      { target: "/api/posts/{}", reason: "unmatched-api-call" },
+      nodes,
+    );
+    expect(ids).toEqual(["api:unmatched"]);
+  });
+
+  it("その他の reason は従来通り label 部分一致（連携状態を問わない）", () => {
+    const nodes = [
+      node({ id: "file:1", kind: "file", label: "routers/posts.py", unmatched: false }),
+      node({ id: "file:2", kind: "file", label: "routers/users.py", unmatched: false }),
+    ];
+    const ids = matchWarningNodeIds(
+      { target: "routers/posts.py", reason: "syntax error: x" },
+      nodes,
+    );
+    expect(ids).toEqual(["file:1"]);
   });
 });

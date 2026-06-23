@@ -211,6 +211,45 @@ describe("webview/main.ts", () => {
     expect(elementIds.some((id) => id.startsWith("linkage:"))).toBe(true);
   });
 
+  it("disables left-drag panning (userPanningEnabled:false) so panning is right-drag only", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const options = cytoscapeMock.mock.calls[0][0] as { userPanningEnabled?: boolean };
+    expect(options.userPanningEnabled).toBe(false);
+  });
+
+  it("pans the graph on right-button drag (mousedown button=2 + mousemove → cy.pan)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const graph = document.getElementById("graph")!;
+    const cyInstance = cytoscapeMock.mock.results[0].value as { pan: ReturnType<typeof vi.fn> };
+    cyInstance.pan.mockClear();
+
+    graph.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 100, clientY: 100 }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 140, clientY: 130 }));
+
+    // pan({x,y}) がオフセット付きで呼ばれる（初期 pan {0,0} + dx/dy）
+    expect(cyInstance.pan).toHaveBeenCalledWith({ x: 40, y: 30 });
+
+    window.dispatchEvent(new MouseEvent("mouseup", { button: 2 }));
+  });
+
+  it("does not pan on left-button drag (button=0)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const graph = document.getElementById("graph")!;
+    const cyInstance = cytoscapeMock.mock.results[0].value as { pan: ReturnType<typeof vi.fn> };
+    cyInstance.pan.mockClear();
+
+    graph.dispatchEvent(new MouseEvent("mousedown", { button: 0, clientX: 100, clientY: 100 }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 140, clientY: 130 }));
+
+    expect(cyInstance.pan).not.toHaveBeenCalled();
+  });
+
   it("posts a nodeClick message when a [data-code-link] element is clicked", async () => {
     await import("../main.js");
 

@@ -10,7 +10,7 @@ describe("languageStyleForPath", () => {
     const s = languageStyleForPath("backend/routers/posts.py");
     expect(s.id).toBe("python");
     expect(s.label).toBe("Python");
-    expect(s.color).toBe("#3776AB");
+    expect(s.color).toBe("#306998");
     expect(s.iconSvg).toContain("<svg");
   });
 

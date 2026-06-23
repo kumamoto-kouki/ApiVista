@@ -18,13 +18,13 @@ import { createDepthSwitchControl } from "./depthSwitchControl.js";
 import { LEGEND_LANGUAGES } from "./languageStyle.js";
 import { createNodeCard } from "./nodeCardRenderer.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
-import { findMatchingNodeIds, projectDepth } from "./projectDepth.js";
+import { matchWarningNodeIds, projectDepth } from "./projectDepth.js";
 import {
   clearLinkageLines,
   clearTreeGuides,
-  getLinkageLineEls,
   renderLinkageLines,
   renderTreeGuides,
+  setHoverReachable,
 } from "./svgRenderer.js";
 import { buildTheme } from "./themeManager.js";
 import {
@@ -87,6 +87,53 @@ appRoot.appendChild(orphanSection);
 let currentOutput: LinkageOutput | undefined;
 let currentDepth: Depth = DEFAULT_DEPTH;
 let cy: Core | undefined;
+
+// ─────────────────────────────────────────
+// 右ドラッグによるパン（表示移動）
+//   Cytoscape は右ボタンパンを標準サポートしないため、左パンを無効化（renderGraph 側）し
+//   ここで右ドラッグを手動でパンに変換する。右クリック単独（ドラッグなし）はカードの
+//   コンテキストメニュー（連携関数コピー）を維持する。
+// ─────────────────────────────────────────
+
+const PAN_MOVE_THRESHOLD = 4;
+let isRightPanning = false;
+let rightPanMoved = false;
+let panStart = { clientX: 0, clientY: 0, panX: 0, panY: 0 };
+
+graphContainer.addEventListener("mousedown", (e) => {
+  if (e.button !== 2 || !cy) return;
+  isRightPanning = true;
+  rightPanMoved = false;
+  const pan = cy.pan();
+  panStart = { clientX: e.clientX, clientY: e.clientY, panX: pan.x, panY: pan.y };
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!isRightPanning || !cy) return;
+  const dx = e.clientX - panStart.clientX;
+  const dy = e.clientY - panStart.clientY;
+  if (Math.abs(dx) > PAN_MOVE_THRESHOLD || Math.abs(dy) > PAN_MOVE_THRESHOLD) {
+    rightPanMoved = true;
+  }
+  cy.pan({ x: panStart.panX + dx, y: panStart.panY + dy });
+});
+
+window.addEventListener("mouseup", (e) => {
+  if (e.button === 2) isRightPanning = false;
+});
+
+// 右ドラッグ後の contextmenu はカードのコピーメニューを開かない。常にブラウザ既定メニューは抑止。
+graphContainer.addEventListener(
+  "contextmenu",
+  (e) => {
+    e.preventDefault();
+    if (rightPanMoved) {
+      e.stopPropagation();
+      rightPanMoved = false;
+    }
+  },
+  true,
+);
 
 // ─────────────────────────────────────────
 // HTMLノードカード定数
@@ -534,25 +581,21 @@ function renderNodeCards(
       });
     }
 
-    // ホバー: 連鎖（無向で到達可能な全ノード）以外を減光
+    // ホバー: 連鎖（無向で到達可能な全ノード）以外を減光。線（連携線・ツリーガイド）は
+    // svgRenderer 側へ到達集合を渡して減光させる（毎tick再描画されるため）。
     card.addEventListener("mouseenter", () => {
       const reachable = reachableNodeIds(node.id);
       for (const { el, nodeId: nid } of nodeCardEls) {
         el.style.opacity = reachable.has(nid) ? "" : "0.24";
       }
-      for (const { el, sourceId, targetId } of getLinkageLineEls()) {
-        el.style.opacity = reachable.has(sourceId) && reachable.has(targetId) ? "" : "0.24";
-      }
+      setHoverReachable(reachable);
     });
 
     card.addEventListener("mouseleave", () => {
-      if (cy) cy.elements().removeClass("dim");
       for (const { el } of nodeCardEls) {
         el.style.opacity = "";
       }
-      for (const { el } of getLinkageLineEls()) {
-        el.style.opacity = "";
-      }
+      setHoverReachable(null);
     });
 
     graphContainer.appendChild(card);
@@ -597,24 +640,25 @@ function renderOrphanWarnings(orphans: Warning[]): void {
   orphanSection.appendChild(header);
 
   const list = document.createElement("div");
-  list.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 8px;";
+  list.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;";
 
   for (const w of orphans) {
     const kind = inferWarningKind(w);
     const icon = kind === "excluded" ? "■" : kind === "parse" ? "◆" : "○";
     const color = WARNING_KIND_COLOR[kind];
 
+    // 警告チップは視認性のため従来比 1.5 倍のサイズで表示する。
     const chip = document.createElement("div");
     chip.className = WARNING_OVERLAY_CLASS;
     chip.style.cssText = [
       `background:${theme.cardBg}`,
       `border:1px solid ${color}40`,
-      "border-radius:4px",
-      "padding:3px 8px 3px 6px",
-      `border-left:3px solid ${color}`,
-      "font-size:12px",
+      "border-radius:6px",
+      "padding:5px 12px 5px 9px",
+      `border-left:5px solid ${color}`,
+      "font-size:18px",
       "font-family:ui-monospace,Menlo,monospace",
-      "max-width:320px",
+      "max-width:480px",
     ].join(";");
 
     const l1 = document.createElement("div");
@@ -622,7 +666,7 @@ function renderOrphanWarnings(orphans: Warning[]): void {
     l1.textContent = `${icon} ${w.target}`;
 
     const l2 = document.createElement("div");
-    l2.style.cssText = `font-size:11px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
+    l2.style.cssText = `font-size:16px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
     l2.textContent = translateReason(w.reason);
 
     chip.appendChild(l1);
@@ -673,7 +717,7 @@ function renderGraph(): void {
   const warningsByNode = new Map<string, Warning[]>();
   const orphanWarnings: Warning[] = [];
   for (const w of currentOutput.warnings) {
-    const matchedIds = findMatchingNodeIds(w.target, nodes);
+    const matchedIds = matchWarningNodeIds(w, nodes);
     if (matchedIds.length > 0) {
       for (const nodeId of matchedIds) {
         if (!warningsByNode.has(nodeId)) warningsByNode.set(nodeId, []);
@@ -698,7 +742,8 @@ function renderGraph(): void {
       padding: 50,
     },
     userZoomingEnabled: true,
-    userPanningEnabled: true,
+    // パンは左ドラッグではなく右ドラッグで行う（下の右ドラッグパン制御で手動実装）。
+    userPanningEnabled: false,
     autoungrabify: true,
     boxSelectionEnabled: false,
   });
@@ -725,9 +770,7 @@ function renderGraph(): void {
         el.style.boxShadow = "";
         el.style.opacity = "";
       }
-      for (const { el } of getLinkageLineEls()) {
-        el.style.opacity = "";
-      }
+      setHoverReachable(null);
     }
   });
 
