@@ -250,6 +250,65 @@ describe("webview/main.ts", () => {
     expect(cyInstance.pan).not.toHaveBeenCalled();
   });
 
+  it("zooms on wheel via manual handler (cy.zoom called with level + renderedPosition)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const graph = document.getElementById("graph")!;
+    const cyInstance = cytoscapeMock.mock.results[0].value as { zoom: ReturnType<typeof vi.fn> };
+    cyInstance.zoom.mockClear();
+    cyInstance.zoom.mockReturnValue(1); // 現在ズーム
+
+    graph.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, clientX: 50, clientY: 60 }));
+
+    expect(cyInstance.zoom).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: expect.any(Number) as number,
+        renderedPosition: expect.any(Object) as object,
+      }),
+    );
+  });
+
+  it("opens the search box on Ctrl+F", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    expect(document.querySelector('[role="search"]')).not.toBeNull();
+    const box = document.querySelector<HTMLElement>('[role="search"]')!;
+    expect(box.style.display).toBe("none");
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true }));
+
+    expect(box.style.display).not.toBe("none");
+  });
+
+  it("highlights matching cards and dims non-matching on search input", async () => {
+    await import("../main.js");
+    dispatchLinkageData(
+      buildOutput({ linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }] }),
+    );
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true }));
+    const searchInput = document
+      .querySelector('[role="search"]')!
+      .querySelector<HTMLInputElement>('input[type="text"]')!;
+
+    // route ラベルは "GET /api/users/{id}"、apiCall は "GET /api/users/{}"。"users" は両方一致。
+    searchInput.value = "users";
+    searchInput.dispatchEvent(new Event("input"));
+
+    // 件数表示が更新される（2件一致）
+    expect(document.querySelector('[role="search"]')!.textContent).toContain("/ 2");
+
+    // 非一致クエリで全カードが減光される
+    searchInput.value = "zzzznomatch";
+    searchInput.dispatchEvent(new Event("input"));
+    const dimmed = Array.from(document.querySelectorAll<HTMLElement>(".node-card")).every(
+      (el) => el.style.opacity === "0.24",
+    );
+    expect(dimmed).toBe(true);
+  });
+
   it("posts a nodeClick message when a [data-code-link] element is clicked", async () => {
     await import("../main.js");
 

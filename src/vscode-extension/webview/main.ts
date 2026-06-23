@@ -17,6 +17,7 @@ import { createCardContextMenu } from "./cardContextMenu.js";
 import { createDepthSwitchControl } from "./depthSwitchControl.js";
 import { LEGEND_LANGUAGES } from "./languageStyle.js";
 import { createNodeCard } from "./nodeCardRenderer.js";
+import { createSearchBox } from "./searchBox.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
 import { matchWarningNodeIds, projectDepth } from "./projectDepth.js";
 import {
@@ -130,6 +131,125 @@ graphContainer.addEventListener(
     if (rightPanMoved) {
       e.stopPropagation();
       rightPanMoved = false;
+    }
+  },
+  true,
+);
+
+// 手動ホイールズーム（カーソル位置中心）。Cytoscape 既定ズームは userPanningEnabled に依存し
+// 無効化済みのため、ここで cy.zoom({level, renderedPosition}) を直接呼ぶ（プログラム的パンは有効）。
+graphContainer.addEventListener(
+  "wheel",
+  (e) => {
+    if (!cy) return;
+    e.preventDefault();
+    const rect = graphContainer.getBoundingClientRect();
+    const renderedPosition = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    let delta = e.deltaY;
+    if (e.deltaMode === 1) delta *= 33; // 行単位デルタを px 相当へ近似（Cytoscape 準拠）
+    const newZoom = cy.zoom() * Math.pow(10, delta / -2200);
+    cy.zoom({ level: newZoom, renderedPosition });
+  },
+  { passive: false },
+);
+
+// ─────────────────────────────────────────
+// 文字列検索（右上の検索ボックス + Ctrl+F）
+// ─────────────────────────────────────────
+
+const SEARCH_MATCH_SHADOW = "0 0 0 2px var(--vscode-editorWarning-foreground,#cca700)";
+const SEARCH_CURRENT_SHADOW = "0 0 0 3px var(--vscode-focusBorder,#0078d4)";
+
+let searchQuery = "";
+let searchMatchIds: string[] = [];
+let searchIndex = 0;
+
+/** 検索のハイライト/減光を全解除する。 */
+function clearSearchHighlight(): void {
+  for (const { el } of nodeCardEls) {
+    el.style.opacity = "";
+    el.style.boxShadow = "";
+  }
+  setHoverReachable(null);
+}
+
+/** 現在のクエリで一致を再計算し、ハイライト/減光・件数・中央寄せを反映する。 */
+function applySearch(query: string): void {
+  searchQuery = query;
+  const q = query.trim().toLowerCase();
+  if (q === "") {
+    searchMatchIds = [];
+    searchIndex = 0;
+    clearSearchHighlight();
+    searchBox.setCount(0, 0);
+    return;
+  }
+
+  const matchSet = new Set<string>();
+  for (const { nodeId, searchText } of nodeCardEls) {
+    if (searchText.includes(q)) matchSet.add(nodeId);
+  }
+  searchMatchIds = nodeCardEls.filter((c) => matchSet.has(c.nodeId)).map((c) => c.nodeId);
+  searchIndex = 0;
+
+  for (const { el, nodeId } of nodeCardEls) {
+    if (matchSet.has(nodeId)) {
+      el.style.opacity = "";
+      el.style.boxShadow = SEARCH_MATCH_SHADOW;
+    } else {
+      el.style.opacity = "0.24";
+      el.style.boxShadow = "";
+    }
+  }
+  setHoverReachable(null);
+
+  if (searchMatchIds.length > 0) {
+    focusMatch(0);
+  } else {
+    searchBox.setCount(0, 0);
+  }
+}
+
+/** i 番目の一致を強調し、表示を中央へ寄せる。 */
+function focusMatch(i: number): void {
+  if (searchMatchIds.length === 0) return;
+  searchIndex = ((i % searchMatchIds.length) + searchMatchIds.length) % searchMatchIds.length;
+  const targetId = searchMatchIds[searchIndex];
+  for (const { el, nodeId } of nodeCardEls) {
+    if (nodeId === targetId) el.style.boxShadow = SEARCH_CURRENT_SHADOW;
+    else if (searchMatchIds.includes(nodeId)) el.style.boxShadow = SEARCH_MATCH_SHADOW;
+  }
+  if (cy) {
+    const ele = cy.getElementById(targetId);
+    if (ele.length) cy.animate({ center: { eles: ele }, duration: 200 });
+  }
+  searchBox.setCount(searchIndex + 1, searchMatchIds.length);
+}
+
+const searchBox = createSearchBox(graphContainer, {
+  onInput: (q) => applySearch(q),
+  onNext: () => focusMatch(searchIndex + 1),
+  onPrev: () => focusMatch(searchIndex - 1),
+  onClose: () => {
+    clearSearchHighlight();
+    searchMatchIds = [];
+    searchQuery = "";
+    searchBox.close();
+  },
+});
+
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      searchBox.open();
+    } else if (e.key === "Escape" && searchBox.isOpen()) {
+      e.preventDefault();
+      clearSearchHighlight();
+      searchMatchIds = [];
+      searchQuery = "";
+      searchBox.close();
     }
   },
   true,
@@ -415,24 +535,34 @@ function computeLayout(
 // HTMLノードカード（オーケストレーション）
 // ─────────────────────────────────────────
 
-type NodeCardEntry = { el: HTMLElement; nodeId: string; side: "backend" | "frontend" };
+type NodeCardEntry = {
+  el: HTMLElement;
+  nodeId: string;
+  side: "backend" | "frontend";
+  /** 検索一致判定用の小文字テキスト（label + sourceLocation.file）。 */
+  searchText: string;
+};
 let nodeCardEls: NodeCardEntry[] = [];
 let nodeCardUpdateFn: (() => void) | null = null;
 
-/** 表示中エッジ（structural+linkage）から構築する無向隣接。連鎖ホバーの減光に使う。 */
+/**
+ * 表示中エッジ（structural+linkage）から構築する**有向**隣接（source→target）。連鎖ホバーに使う。
+ *
+ * 無向にすると、ファイル/関数依存グラフのように密に連結したグラフでは到達集合が全ノードになり
+ * 減光が起きない。エッジの向き（呼び出し元→呼び出し先、フロント→バック）に沿って下流のみを
+ * 辿ることで、連鎖を保ちつつ無関係な枝を減光する。
+ */
 let hoverAdj = new Map<string, Set<string>>();
 
-/** `hoverAdj` を `edges` から再構築する（両方向）。 */
+/** `hoverAdj` を `edges` から有向（source→target）で再構築する。 */
 function buildHoverAdjacency(edges: GraphEdge[]): void {
   hoverAdj = new Map();
-  const link = (a: string, b: string): void => {
-    (hoverAdj.get(a) ?? hoverAdj.set(a, new Set()).get(a)!).add(b);
-    (hoverAdj.get(b) ?? hoverAdj.set(b, new Set()).get(b)!).add(a);
-  };
-  for (const e of edges) link(e.source, e.target);
+  for (const e of edges) {
+    (hoverAdj.get(e.source) ?? hoverAdj.set(e.source, new Set()).get(e.source)!).add(e.target);
+  }
 }
 
-/** `startId` から無向 BFS で到達するノード ID 集合（起点含む）を返す。 */
+/** `startId` から有向 BFS で下流到達するノード ID 集合（起点含む）を返す。 */
 function reachableNodeIds(startId: string): Set<string> {
   const visited = new Set<string>([startId]);
   const queue = [startId];
@@ -599,7 +729,12 @@ function renderNodeCards(
     });
 
     graphContainer.appendChild(card);
-    nodeCardEls.push({ el: card, nodeId: node.id, side: node.side });
+    nodeCardEls.push({
+      el: card,
+      nodeId: node.id,
+      side: node.side,
+      searchText: `${node.label} ${node.sourceLocation?.file ?? ""}`.toLowerCase(),
+    });
   }
 
   const updateFn = () => updateNodeCardPositions();
@@ -741,8 +876,10 @@ function renderGraph(): void {
       fit: true,
       padding: 50,
     },
-    userZoomingEnabled: true,
-    // パンは左ドラッグではなく右ドラッグで行う（下の右ドラッグパン制御で手動実装）。
+    // ホイールズーム/パンは下の手動ハンドラで実装する。Cytoscape のホイールズームは
+    // userPanningEnabled が真であることを要求するため（パン無効化でズームも死ぬ）、両方 false にし
+    // 右ドラッグパン + 手動ホイールズームで代替する。
+    userZoomingEnabled: false,
     userPanningEnabled: false,
     autoungrabify: true,
     boxSelectionEnabled: false,
@@ -788,6 +925,11 @@ function renderGraph(): void {
   renderTreeGuides(cy, graphContainer, nodes, edges, depths, primaryParentOf, warningsByNode);
   renderLinkageLines(cy, graphContainer, nodes, edges, depths);
   renderOrphanWarnings(orphanWarnings);
+
+  // 再描画（再解析・深度切替）後も検索中なら一致表示を維持する。
+  if (searchBox.isOpen() && searchQuery.trim() !== "") {
+    applySearch(searchQuery);
+  }
 }
 
 window.addEventListener("message", (event: MessageEvent<HostToWebviewMessage>) => {
