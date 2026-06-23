@@ -116,13 +116,7 @@ async function runAnalysis(
 }
 
 /** キャッシュ表示後にバックグラウンドで再解析し、パネルとキャッシュを更新する。 */
-async function reanalyzeInBackground(
-  wasmDir: string,
-  storageDir: string,
-  context: vscode.ExtensionContext,
-  backendRoot: string,
-  frontendRoot: string,
-): Promise<void> {
+async function reanalyzeInBackground(wasmDir: string, storageDir: string): Promise<void> {
   const result = await runAnalysis(wasmDir, "ApiVista: バックグラウンド更新中...");
   if (result === null) return;
   graphPanel.postLinkageUpdate(result.output);
@@ -171,7 +165,7 @@ async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): 
       }
       const { backendRoot, frontendRoot } = scanned;
       openPanelAndStartWatcher(context, cached, backendRoot, frontendRoot);
-      void reanalyzeInBackground(wasmDir, storageDir, context, backendRoot, frontendRoot);
+      void reanalyzeInBackground(wasmDir, storageDir);
       return;
     }
   }
@@ -195,6 +189,60 @@ async function runReanalyze(wasmDir: string, storageDir?: string): Promise<void>
   }
 }
 
+async function runAnalyzeActiveFile(
+  context: vscode.ExtensionContext,
+  wasmDir: string,
+  storageDir: string | undefined,
+  uri?: vscode.Uri,
+): Promise<void> {
+  const focalFile = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+  const result = await runAnalysis(wasmDir, "ApiVista: スポット解析中...", { focalFile });
+  if (result === null) return;
+  if (storageDir) void saveCachedResult(storageDir, result.output);
+  openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
+}
+
+async function runCopyFunctionWithLinked(storageDir: string | undefined): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return;
+  if (!storageDir) {
+    void vscode.window.showErrorMessage(
+      "ApiVista: 先に「Show Route Linkage Graph」で解析を実行してください。",
+    );
+    return;
+  }
+  const cached = await loadCachedResult(storageDir);
+  if (!cached) {
+    void vscode.window.showErrorMessage(
+      "ApiVista: 解析結果がキャッシュされていません。先に解析を実行してください。",
+    );
+    return;
+  }
+  let scanned: { backendRoot: string; frontendRoot: string };
+  try {
+    scanned = validate();
+  } catch (error) {
+    reportError(error);
+    return;
+  }
+  const count = await copyFunctionWithLinked(
+    editor.document,
+    editor.selection.active,
+    cached,
+    scanned.backendRoot,
+    scanned.frontendRoot,
+  );
+  if (count === 0) {
+    void vscode.window.showInformationMessage(
+      "ApiVista: カーソルを関数内に置いてください（連携関数が見つかりませんでした）。",
+    );
+  } else {
+    void vscode.window.showInformationMessage(
+      `ApiVista: ${count}個の関数をクリップボードにコピーしました。`,
+    );
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const wasmDir = vscode.Uri.joinPath(context.extensionUri, "media", "wasm").fsPath;
   const storageDir = context.storageUri?.fsPath;
@@ -202,73 +250,15 @@ export function activate(context: vscode.ExtensionContext): void {
   outputChannel = vscode.window.createOutputChannel("ApiVista");
   context.subscriptions.push(outputChannel);
 
-  const showGraphDisposable = vscode.commands.registerCommand("apivista.showGraph", () =>
-    runShowGraph(context, wasmDir),
-  );
-  const reanalyzeDisposable = vscode.commands.registerCommand("apivista.reanalyze", () =>
-    runReanalyze(wasmDir, storageDir),
-  );
-  const analyzeActiveFileDisposable = vscode.commands.registerCommand(
-    "apivista.analyzeActiveFile",
-    async (uri?: vscode.Uri) => {
-      // エクスプローラー右クリック時は uri が渡される。エディタ右クリック/コマンドパレットは undefined。
-      const focalFile = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
-      const result = await runAnalysis(wasmDir, "ApiVista: スポット解析中...", { focalFile });
-      if (result === null) return;
-      if (storageDir) void saveCachedResult(storageDir, result.output);
-      openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
-    },
-  );
-
-  const copyFunctionDisposable = vscode.commands.registerCommand(
-    "apivista.copyFunctionWithLinked",
-    async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-      if (!storageDir) {
-        void vscode.window.showErrorMessage(
-          "ApiVista: 先に「Show Route Linkage Graph」で解析を実行してください。",
-        );
-        return;
-      }
-      const cached = await loadCachedResult(storageDir);
-      if (!cached) {
-        void vscode.window.showErrorMessage(
-          "ApiVista: 解析結果がキャッシュされていません。先に解析を実行してください。",
-        );
-        return;
-      }
-      let scanned: { backendRoot: string; frontendRoot: string };
-      try {
-        scanned = validate();
-      } catch (error) {
-        reportError(error);
-        return;
-      }
-      const count = await copyFunctionWithLinked(
-        editor.document,
-        editor.selection.active,
-        cached,
-        scanned.backendRoot,
-        scanned.frontendRoot,
-      );
-      if (count === 0) {
-        void vscode.window.showInformationMessage(
-          "ApiVista: カーソルを関数内に置いてください（連携関数が見つかりませんでした）。",
-        );
-      } else {
-        void vscode.window.showInformationMessage(
-          `ApiVista: ${count}個の関数をクリップボードにコピーしました。`,
-        );
-      }
-    },
-  );
-
   context.subscriptions.push(
-    showGraphDisposable,
-    reanalyzeDisposable,
-    analyzeActiveFileDisposable,
-    copyFunctionDisposable,
+    vscode.commands.registerCommand("apivista.showGraph", () => runShowGraph(context, wasmDir)),
+    vscode.commands.registerCommand("apivista.reanalyze", () => runReanalyze(wasmDir, storageDir)),
+    vscode.commands.registerCommand("apivista.analyzeActiveFile", (uri?: vscode.Uri) =>
+      runAnalyzeActiveFile(context, wasmDir, storageDir, uri),
+    ),
+    vscode.commands.registerCommand("apivista.copyFunctionWithLinked", () =>
+      runCopyFunctionWithLinked(storageDir),
+    ),
   );
 }
 

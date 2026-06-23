@@ -84,6 +84,68 @@ async function extractCode(absolutePath: string, funcName: string): Promise<stri
   return doc.getText(sym.range);
 }
 
+/** バックエンドハンドラと連携するフロントエンド関数スニペットを収集する。 */
+async function collectLinkedFromBackend(
+  output: LinkageOutput,
+  matchedLinkages: typeof output.linkages,
+  frontendRoot: string,
+): Promise<FunctionSnippet[]> {
+  const result: FunctionSnippet[] = [];
+  const seen = new Set<string>();
+  for (const linkage of matchedLinkages) {
+    const fnId = linkage.apiCall.enclosingFunctionId;
+    if (seen.has(fnId)) continue;
+    seen.add(fnId);
+    const fn = output.functions.find((f) => f.id === fnId) as LinkedFunctionNode | undefined;
+    if (!fn) continue;
+    const feAbs = `${frontendRoot}/${fn.location.file}`;
+    const code = await extractCode(feAbs, fn.name);
+    if (code) {
+      result.push({
+        funcName: fn.name,
+        fileRelPath: fn.location.file,
+        lang: langFromExt(fn.location.file),
+        code,
+      });
+    }
+  }
+  return result;
+}
+
+/** フロントエンド関数と連携するバックエンドハンドラスニペットを収集する。 */
+async function collectLinkedFromFrontend(
+  output: LinkageOutput,
+  matchedLinkages: typeof output.linkages,
+  backendRoot: string,
+): Promise<FunctionSnippet[]> {
+  const result: FunctionSnippet[] = [];
+  const seen = new Set<string>();
+  for (const linkage of matchedLinkages) {
+    const handlerFile = linkage.route.handler.file;
+    const handlerKey = `${handlerFile}:${linkage.route.handler.line}`;
+    if (seen.has(handlerKey)) continue;
+    seen.add(handlerKey);
+    const beFn = output.functions.find(
+      (f) =>
+        f.side === "backend" &&
+        f.location.file === handlerFile &&
+        f.location.line === linkage.route.handler.line,
+    ) as LinkedFunctionNode | undefined;
+    const beAbs = `${backendRoot}/${handlerFile}`;
+    const handlerName = beFn?.name ?? linkage.route.handler.file;
+    const code = await extractCode(beAbs, handlerName);
+    if (code) {
+      result.push({
+        funcName: handlerName,
+        fileRelPath: handlerFile,
+        lang: langFromExt(handlerFile),
+        code,
+      });
+    }
+  }
+  return result;
+}
+
 /** Markdown を生成する。 */
 function buildMarkdown(
   focal: FunctionSnippet,
@@ -164,24 +226,7 @@ export async function copyFunctionWithLinked(
       const first = matchedLinkages[0].route;
       routeLabel = `${first.method} ${first.path}`;
     }
-    const seen = new Set<string>();
-    for (const linkage of matchedLinkages) {
-      const fnId = linkage.apiCall.enclosingFunctionId;
-      if (seen.has(fnId)) continue;
-      seen.add(fnId);
-      const fn = output.functions.find((f) => f.id === fnId) as LinkedFunctionNode | undefined;
-      if (!fn) continue;
-      const feAbs = `${frontendRoot}/${fn.location.file}`;
-      const code = await extractCode(feAbs, fn.name);
-      if (code) {
-        linked.push({
-          funcName: fn.name,
-          fileRelPath: fn.location.file,
-          lang: langFromExt(fn.location.file),
-          code,
-        });
-      }
-    }
+    linked.push(...(await collectLinkedFromBackend(output, matchedLinkages, frontendRoot)));
   } else {
     // フロントエンド関数 → 連携するバックエンドハンドラを検索
     const fn = output.functions.find(
@@ -195,31 +240,7 @@ export async function copyFunctionWithLinked(
         const first = matchedLinkages[0].route;
         routeLabel = `${first.method} ${first.path}`;
       }
-      const seen = new Set<string>();
-      for (const linkage of matchedLinkages) {
-        const handlerFile = linkage.route.handler.file;
-        const handlerKey = `${handlerFile}:${linkage.route.handler.line}`;
-        if (seen.has(handlerKey)) continue;
-        seen.add(handlerKey);
-        // バックエンドハンドラ関数名を functions から逆引き
-        const beFn = output.functions.find(
-          (f) =>
-            f.side === "backend" &&
-            f.location.file === handlerFile &&
-            f.location.line === linkage.route.handler.line,
-        ) as LinkedFunctionNode | undefined;
-        const beAbs = `${backendRoot}/${handlerFile}`;
-        const handlerName = beFn?.name ?? linkage.route.handler.file;
-        const code = await extractCode(beAbs, handlerName);
-        if (code) {
-          linked.push({
-            funcName: handlerName,
-            fileRelPath: handlerFile,
-            lang: langFromExt(handlerFile),
-            code,
-          });
-        }
-      }
+      linked.push(...(await collectLinkedFromFrontend(output, matchedLinkages, backendRoot)));
     }
   }
 

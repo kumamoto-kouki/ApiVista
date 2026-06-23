@@ -59,12 +59,9 @@ export async function analyze(
 ): Promise<LinkageOutput> {
   const { onProgress, checkCancelled, focalFile } = options ?? {};
 
-  // focalFile の絶対パスを各 root 相対の fileId に変換する（POSIX スラッシュに正規化）。
+  // focalFile の絶対パスをバックエンド root 相対の fileId に変換する（POSIX スラッシュに正規化）。
   const beFileId = focalFile?.startsWith(backendRoot + "/")
     ? relative(backendRoot, focalFile).replace(/\\/g, "/")
-    : undefined;
-  const feFileId = focalFile?.startsWith(frontendRoot + "/")
-    ? relative(frontendRoot, focalFile).replace(/\\/g, "/")
     : undefined;
 
   try {

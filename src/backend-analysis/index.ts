@@ -78,6 +78,20 @@ function assertBackendRoot(backendRoot: string): void {
 }
 
 /**
+ * focalFileId と同じディレクトリ内のファイル + ルートレベルのファイルに絞り込む。
+ * ルートレベルファイル（main.py 等）は常に含める（依存解決に必要なため）。
+ */
+function filterByFocalDir(allFileIds: string[], focalFileId: string): string[] {
+  const focalDir = focalFileId.includes("/")
+    ? focalFileId.slice(0, focalFileId.lastIndexOf("/"))
+    : "";
+  if (focalDir === "") {
+    return allFileIds.filter((id) => !id.includes("/"));
+  }
+  return allFileIds.filter((id) => id.startsWith(focalDir + "/") || !id.includes("/"));
+}
+
+/**
  * `backendRoot` 配下の FastAPI コードを静的解析し、単一の `AnalysisOutput` を返す。
  *
  * @param backendRoot 解析対象 backend ルートの絶対パス（存在するディレクトリであること）
@@ -105,16 +119,8 @@ export async function analyzeBackend(
 
   // 決定性のため fileId 昇順で処理する。focalFileId が指定された場合は Pass1 を限定する。
   const allFileIds = [...map.pathToModule.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const focalFileId = options?.focalFileId;
-  const fileIds = focalFileId
-    ? allFileIds.filter((id) => {
-        const focalDir = focalFileId.includes("/")
-          ? focalFileId.slice(0, focalFileId.lastIndexOf("/"))
-          : "";
-        return focalDir === ""
-          ? !id.includes("/")
-          : id.startsWith(focalDir + "/") || !id.includes("/");
-      })
+  const fileIds = options?.focalFileId
+    ? filterByFocalDir(allFileIds, options.focalFileId)
     : allFileIds;
 
   for (const fileId of fileIds) {
