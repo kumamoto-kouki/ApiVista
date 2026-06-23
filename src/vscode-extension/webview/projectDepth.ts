@@ -39,6 +39,12 @@ export interface GraphNode {
   label: string;
   unmatched: boolean;
   sourceLocation?: { file: string; line: number };
+  /**
+   * この枠に対応する関数ノードの ID（名前空間化済み `LinkedFunctionNode.id`）。
+   * route=`entryFunctionId` / apiCall=`enclosingFunctionId` / function=`fn.id`。
+   * file 深度の枠は単一関数に対応しないため未設定。連鎖コピーの起点に使う。
+   */
+  functionId?: string;
 }
 
 export interface GraphEdge {
@@ -84,6 +90,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
       label: routeLabel(linkage.route),
       unmatched: false,
       sourceLocation: { ...linkage.route.handler },
+      functionId: linkage.route.entryFunctionId,
     });
     nodes.push({
       id: apiCallId,
@@ -92,6 +99,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
       label: apiCallLabel(linkage.apiCall),
       unmatched: false,
       sourceLocation: { ...linkage.apiCall.location },
+      functionId: linkage.apiCall.enclosingFunctionId,
     });
     edges.push({
       id: `linkage:${apiCallId}->${routeId}`,
@@ -109,6 +117,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
       label: routeLabel(route),
       unmatched: true,
       sourceLocation: { ...route.handler },
+      functionId: route.entryFunctionId,
     });
   }
 
@@ -120,6 +129,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
       label: apiCallLabel(apiCall),
       unmatched: true,
       sourceLocation: { ...apiCall.location },
+      functionId: apiCall.enclosingFunctionId,
     });
   }
 
@@ -194,6 +204,7 @@ function projectFunctionDepth(output: LinkageOutput): { nodes: GraphNode[]; edge
     label: fn.name,
     unmatched: false,
     sourceLocation: { ...fn.location },
+    functionId: fn.id,
   }));
 
   const functionIds = new Set(output.functions.map((fn) => fn.id));

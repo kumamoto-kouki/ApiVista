@@ -110,6 +110,9 @@ describe("projectDepth", () => {
       expect(routeNode?.label).toContain("GET");
       expect(routeNode?.sourceLocation).toEqual({ file: "backend/routes/users.ts", line: 10 });
       expect(apiCallNode?.sourceLocation).toEqual({ file: "frontend/api/users.ts", line: 5 });
+      // 連鎖コピーの起点となる functionId（route=entryFunctionId / apiCall=enclosingFunctionId）
+      expect(routeNode?.functionId).toBe("backend:fn-getUser");
+      expect(apiCallNode?.functionId).toBe("frontend:fn-fetchUser");
 
       expect(edges).toHaveLength(1);
       expect(edges[0].kind).toBe("linkage");
@@ -129,6 +132,7 @@ describe("projectDepth", () => {
       expect(nodes).toHaveLength(1);
       expect(nodes[0].kind).toBe("route");
       expect(nodes[0].unmatched).toBe(true);
+      expect(nodes[0].functionId).toBe("backend:fn-getUser");
       expect(edges).toHaveLength(0);
       assertReferentialIntegrity(nodes, edges);
     });
@@ -294,6 +298,8 @@ describe("projectDepth", () => {
 
       expect(nodes).toHaveLength(2);
       expect(nodes.every((n) => n.kind === "function" && n.unmatched === false)).toBe(true);
+      // function 深度では functionId はノード ID と一致する
+      expect(nodes.every((n) => n.functionId === n.id)).toBe(true);
       const structuralEdges = edges.filter((e) => e.kind === "structural");
       expect(structuralEdges).toHaveLength(1);
       expect(structuralEdges[0].source).toBe("backend:fn-a");

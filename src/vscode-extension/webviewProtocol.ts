@@ -17,7 +17,4 @@ export type HostToWebviewMessage = { type: "linkageData"; payload: LinkageOutput
 export type WebviewToHostMessage =
   | { type: "ready" }
   | { type: "nodeClick"; payload: { file: string; line: number } }
-  | {
-      type: "copyLinked";
-      payload: { file: string; line: number; side: "backend" | "frontend" };
-    };
+  | { type: "copyLinked"; payload: { functionId: string } };

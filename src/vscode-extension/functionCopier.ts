@@ -1,13 +1,14 @@
 /**
- * 右クリックした関数と、ルート連携で結びついた反対側の関数を Markdown 形式でクリップボードにコピーする。
+ * グラフの枠（関数ノード）を起点に、連結する全関数を Markdown 形式でクリップボードへコピーする。
  *
- * 処理フロー:
- * 1. カーソル位置の関数を DocumentSymbol から特定
- * 2. LinkageOutput でルート連携している反対側の関数を検索
- * 3. 各関数のコードを openTextDocument + DocumentSymbol の range から抽出
- * 4. Markdown 生成 → クリップボードへコピー
+ * 連結グラフ:
+ * - 同 side の呼び出し関係 `LinkedFunctionNode.calls[]`（無向辺として扱う）
+ * - フロント⇄バックのルート連携 `linkage.apiCall.enclosingFunctionId ⇄ linkage.route.entryFunctionId`
+ *
+ * 起点関数 ID から無向 BFS で連結成分を求め、各関数のコードを
+ * `openTextDocument` + DocumentSymbol の range から抽出して Markdown 化する。
  */
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -22,7 +23,7 @@ interface FunctionSnippet {
   code: string;
 }
 
-/** ファイル拡張子から言語識別子を返す。 */
+/** ファイル拡張子から Markdown フェンス用の言語識別子を返す。 */
 function langFromExt(filePath: string): string {
   if (filePath.endsWith(".py")) return "python";
   if (filePath.endsWith(".vue")) return "vue";
@@ -44,27 +45,6 @@ function flattenFunctionSymbols(symbols: vscode.DocumentSymbol[]): vscode.Docume
   return result;
 }
 
-/** カーソル位置を含む関数シンボルを返す。 */
-async function findFunctionAtCursor(
-  document: vscode.TextDocument,
-  position: vscode.Position,
-): Promise<vscode.DocumentSymbol | undefined> {
-  const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-    "vscode.executeDocumentSymbolProvider",
-    document.uri,
-  );
-  if (!symbols) return undefined;
-  const funcs = flattenFunctionSymbols(symbols);
-  // カーソルを含む最も内側のシンボルを返す
-  return funcs
-    .filter((s) => s.range.contains(position))
-    .sort((a, b) => {
-      const aLen = a.range.end.line - a.range.start.line;
-      const bLen = b.range.end.line - b.range.start.line;
-      return aLen - bLen; // 小さい範囲（内側）を優先
-    })[0];
-}
-
 /** ファイルを開いて指定関数名の range からコードを抽出する。 */
 async function extractCode(absolutePath: string, funcName: string): Promise<string | undefined> {
   let doc: vscode.TextDocument;
@@ -84,84 +64,48 @@ async function extractCode(absolutePath: string, funcName: string): Promise<stri
   return doc.getText(sym.range);
 }
 
-/** バックエンドハンドラと連携するフロントエンド関数スニペットを収集する。 */
-async function collectLinkedFromBackend(
-  output: LinkageOutput,
-  matchedLinkages: typeof output.linkages,
-  frontendRoot: string,
-): Promise<FunctionSnippet[]> {
-  const result: FunctionSnippet[] = [];
-  const seen = new Set<string>();
-  for (const linkage of matchedLinkages) {
-    const fnId = linkage.apiCall.enclosingFunctionId;
-    if (seen.has(fnId)) continue;
-    seen.add(fnId);
-    const fn = output.functions.find((f) => f.id === fnId) as LinkedFunctionNode | undefined;
-    if (!fn) continue;
-    const feAbs = `${frontendRoot}/${fn.location.file}`;
-    const code = await extractCode(feAbs, fn.name);
-    if (code) {
-      result.push({
-        funcName: fn.name,
-        fileRelPath: fn.location.file,
-        lang: langFromExt(fn.location.file),
-        code,
-      });
-    }
+/**
+ * `output` から無向隣接（calls[] ＋ ルート連携の enclosing⇄entry）を構築する。
+ * 戻り値は関数 ID → 隣接関数 ID 集合。両端が `functions` に存在する辺のみを張る。
+ */
+function buildFunctionAdjacency(output: LinkageOutput): Map<string, Set<string>> {
+  const ids = new Set(output.functions.map((f) => f.id));
+  const adj = new Map<string, Set<string>>();
+  const link = (a: string, b: string): void => {
+    if (!ids.has(a) || !ids.has(b) || a === b) return;
+    (adj.get(a) ?? adj.set(a, new Set()).get(a)!).add(b);
+    (adj.get(b) ?? adj.set(b, new Set()).get(b)!).add(a);
+  };
+
+  for (const fn of output.functions) {
+    for (const callee of fn.calls) link(fn.id, callee);
   }
-  return result;
+  for (const l of output.linkages) {
+    link(l.apiCall.enclosingFunctionId, l.route.entryFunctionId);
+  }
+  return adj;
 }
 
-/** フロントエンド関数と連携するバックエンドハンドラスニペットを収集する。 */
-async function collectLinkedFromFrontend(
-  output: LinkageOutput,
-  matchedLinkages: typeof output.linkages,
-  backendRoot: string,
-): Promise<FunctionSnippet[]> {
-  const result: FunctionSnippet[] = [];
-  const seen = new Set<string>();
-  for (const linkage of matchedLinkages) {
-    const handlerFile = linkage.route.handler.file;
-    const handlerKey = `${handlerFile}:${linkage.route.handler.line}`;
-    if (seen.has(handlerKey)) continue;
-    seen.add(handlerKey);
-    const beFn = output.functions.find(
-      (f) =>
-        f.side === "backend" &&
-        f.location.file === handlerFile &&
-        f.location.line === linkage.route.handler.line,
-    ) as LinkedFunctionNode | undefined;
-    const beAbs = `${backendRoot}/${handlerFile}`;
-    const handlerName = beFn?.name ?? linkage.route.handler.file;
-    const code = await extractCode(beAbs, handlerName);
-    if (code) {
-      result.push({
-        funcName: handlerName,
-        fileRelPath: handlerFile,
-        lang: langFromExt(handlerFile),
-        code,
-      });
+/** 起点 ID から無向 BFS で到達する関数 ID 集合（起点含む）を返す。 */
+function reachableFunctionIds(adj: Map<string, Set<string>>, focalId: string): Set<string> {
+  const visited = new Set<string>([focalId]);
+  const queue = [focalId];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const next of adj.get(cur) ?? []) {
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push(next);
+      }
     }
   }
-  return result;
+  return visited;
 }
 
-/** Markdown を生成する。 */
-function buildMarkdown(
-  focal: FunctionSnippet,
-  linked: FunctionSnippet[],
-  routeLabel: string,
-): string {
-  const lines: string[] = [
-    `# ApiVista: ルート連携関数コピー — \`${routeLabel}\``,
-    "",
-    `## \`${focal.funcName}\` — ${focal.fileRelPath}`,
-    "",
-    `\`\`\`${focal.lang}`,
-    focal.code,
-    "```",
-  ];
-  for (const fn of linked) {
+/** Markdown を生成する（先頭が起点関数）。 */
+function buildMarkdown(focalName: string, snippets: FunctionSnippet[]): string {
+  const lines: string[] = [`# ApiVista: 連携関数コピー — \`${focalName}\``];
+  for (const fn of snippets) {
     lines.push(
       "",
       `## \`${fn.funcName}\` — ${fn.fileRelPath}`,
@@ -175,106 +119,55 @@ function buildMarkdown(
 }
 
 /**
- * カーソル位置の関数と連携関数を Markdown でクリップボードにコピーする。
+ * 起点関数 ID から連結する全関数を Markdown でクリップボードにコピーする。
  *
- * @param document 現在のエディタドキュメント
- * @param position カーソル位置
- * @param output キャッシュ済み LinkageOutput
+ * @param output 表示中 / キャッシュ済みの LinkageOutput
+ * @param focalFunctionId 起点関数の名前空間化済み ID（`LinkedFunctionNode.id`）
  * @param backendRoot バックエンドルートの絶対パス
  * @param frontendRoot フロントエンドルートの絶対パス
- * @returns コピーした関数数（0 = 対象なし）
+ * @returns コピーした関数数（0 = 起点不明 / 抽出不能）
  */
-export async function copyFunctionWithLinked(
-  document: vscode.TextDocument,
-  position: vscode.Position,
+export async function copyLinkedChain(
   output: LinkageOutput,
+  focalFunctionId: string,
   backendRoot: string,
   frontendRoot: string,
 ): Promise<number> {
-  const funcSymbol = await findFunctionAtCursor(document, position);
-  if (!funcSymbol) return 0;
+  const byId = new Map<string, LinkedFunctionNode>(output.functions.map((f) => [f.id, f]));
+  if (!byId.has(focalFunctionId)) return 0;
 
-  const absPath = document.uri.fsPath;
-  const isBackend = absPath.startsWith(backendRoot + "/") || absPath.startsWith(backendRoot + "\\");
-  const isFrontend =
-    absPath.startsWith(frontendRoot + "/") || absPath.startsWith(frontendRoot + "\\");
+  const adj = buildFunctionAdjacency(output);
+  const reachable = reachableFunctionIds(adj, focalFunctionId);
 
-  if (!isBackend && !isFrontend) return 0;
+  // 起点を先頭に、残りは (side, file, line) 昇順で決定的に整列する。
+  const ordered = [...reachable]
+    .map((id) => byId.get(id))
+    .filter((f): f is LinkedFunctionNode => f !== undefined)
+    .sort((a, b) => {
+      if (a.id === focalFunctionId) return -1;
+      if (b.id === focalFunctionId) return 1;
+      if (a.side !== b.side) return a.side < b.side ? -1 : 1;
+      if (a.location.file !== b.location.file) return a.location.file < b.location.file ? -1 : 1;
+      return a.location.line - b.location.line;
+    });
 
-  const root = isBackend ? backendRoot : frontendRoot;
-  const relFile = relative(root, absPath).replace(/\\/g, "/");
-
-  const focalCode = document.getText(funcSymbol.range);
-  const focal: FunctionSnippet = {
-    funcName: funcSymbol.name,
-    fileRelPath: relFile,
-    lang: langFromExt(absPath),
-    code: focalCode,
-  };
-
-  const linked: FunctionSnippet[] = [];
-  let routeLabel = funcSymbol.name;
-
-  if (isBackend) {
-    // バックエンドハンドラ → 連携するフロントエンド関数を検索
-    const matchedLinkages = output.linkages.filter(
-      (l) =>
-        l.route.handler.file === relFile &&
-        funcSymbol.range.contains(new vscode.Position(l.route.handler.line - 1, 0)),
-    );
-    if (matchedLinkages.length > 0) {
-      const first = matchedLinkages[0].route;
-      routeLabel = `${first.method} ${first.path}`;
-    }
-    linked.push(...(await collectLinkedFromBackend(output, matchedLinkages, frontendRoot)));
-  } else {
-    // フロントエンド関数 → 連携するバックエンドハンドラを検索
-    const fn = output.functions.find(
-      (f) => f.side === "frontend" && f.name === funcSymbol.name && f.location.file === relFile,
-    ) as LinkedFunctionNode | undefined;
-    if (fn) {
-      const matchedLinkages = output.linkages.filter(
-        (l) => l.apiCall.enclosingFunctionId === fn.id,
-      );
-      if (matchedLinkages.length > 0) {
-        const first = matchedLinkages[0].route;
-        routeLabel = `${first.method} ${first.path}`;
-      }
-      linked.push(...(await collectLinkedFromFrontend(output, matchedLinkages, backendRoot)));
+  const snippets: FunctionSnippet[] = [];
+  for (const fn of ordered) {
+    const root = fn.side === "backend" ? backendRoot : frontendRoot;
+    const code = await extractCode(join(root, fn.location.file), fn.name);
+    if (code) {
+      snippets.push({
+        funcName: fn.name,
+        fileRelPath: fn.location.file,
+        lang: langFromExt(fn.location.file),
+        code,
+      });
     }
   }
 
-  const markdown = buildMarkdown(focal, linked, routeLabel);
-  await vscode.env.clipboard.writeText(markdown);
-  return 1 + linked.length;
-}
+  if (snippets.length === 0) return 0;
 
-/**
- * グラフの枠（ノード）情報からドキュメントを開き、`copyFunctionWithLinked` に委譲する。
- *
- * Webview のノードカード右クリックで得られる `sourceLocation`(file+line) と `side` から
- * 絶対パスを解決し、その位置を「カーソル」とみなして既存のコピーロジックを再利用する。
- *
- * @param output キャッシュ済み / 表示中の LinkageOutput
- * @param payload 枠の位置情報（root 相対 file・1始まり line・side）
- * @param backendRoot バックエンドルートの絶対パス
- * @param frontendRoot フロントエンドルートの絶対パス
- * @returns コピーした関数数（0 = 対象なし / ファイルを開けない）
- */
-export async function copyLinkedFromNode(
-  output: LinkageOutput,
-  payload: { file: string; line: number; side: "backend" | "frontend" },
-  backendRoot: string,
-  frontendRoot: string,
-): Promise<number> {
-  const root = payload.side === "backend" ? backendRoot : frontendRoot;
-  const absPath = join(root, payload.file);
-  let doc: vscode.TextDocument;
-  try {
-    doc = await vscode.workspace.openTextDocument(absPath);
-  } catch {
-    return 0;
-  }
-  const position = new vscode.Position(Math.max(0, payload.line - 1), 0);
-  return copyFunctionWithLinked(doc, position, output, backendRoot, frontendRoot);
+  const focalName = byId.get(focalFunctionId)?.name ?? snippets[0].funcName;
+  await vscode.env.clipboard.writeText(buildMarkdown(focalName, snippets));
+  return snippets.length;
 }

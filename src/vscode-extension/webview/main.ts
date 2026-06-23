@@ -15,7 +15,8 @@ import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } fro
 
 import { createCardContextMenu } from "./cardContextMenu.js";
 import { createDepthSwitchControl } from "./depthSwitchControl.js";
-import { createNodeCard, NODE_INITIALS, NODE_LABELS, type NodeKind } from "./nodeCardRenderer.js";
+import { LEGEND_LANGUAGES } from "./languageStyle.js";
+import { createNodeCard } from "./nodeCardRenderer.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
 import { findMatchingNodeIds, projectDepth } from "./projectDepth.js";
 import {
@@ -43,12 +44,12 @@ const DEFAULT_DEPTH: Depth = "route";
 
 const vscodeApi = acquireVsCodeApi();
 
-// 枠（ノードカード）右クリック用コンテキストメニュー。選択で連携関数コピーを要求する。
+// 枠（ノードカード）右クリック用コンテキストメニュー。選択で連鎖関数コピーを要求する。
 const cardContextMenu = createCardContextMenu((node) => {
-  if (node.sourceLocation) {
+  if (node.functionId) {
     vscodeApi.postMessage({
       type: "copyLinked",
-      payload: { ...node.sourceLocation, side: node.side },
+      payload: { functionId: node.functionId },
     });
   }
 });
@@ -110,28 +111,20 @@ function renderLegend(container: HTMLElement): void {
   const theme = buildTheme();
   container.replaceChildren();
 
-  const kinds: NodeKind[] = ["route", "apiCall", "file", "function"];
-  for (const kind of kinds) {
+  // 言語（拡張子）別の凡例。枠の配色・左上アイコンに対応する。
+  for (const lang of LEGEND_LANGUAGES) {
     const entry = document.createElement("span");
     entry.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:13px;";
 
-    const badge = document.createElement("span");
-    badge.textContent = NODE_INITIALS[kind];
-    badge.style.cssText = [
-      `background:${theme[kind]}`,
-      "color:#1f1f1f",
-      "font-size:11px",
-      "font-weight:700",
-      "padding:1px 5px",
-      "border-radius:3px",
-      "font-family:ui-monospace,Menlo,monospace",
-    ].join(";");
+    const icon = document.createElement("span");
+    icon.innerHTML = lang.iconSvg;
+    icon.style.cssText = "width:14px;height:14px;display:inline-flex;line-height:0;flex-shrink:0;";
 
     const label = document.createElement("span");
-    label.textContent = NODE_LABELS[kind];
+    label.textContent = lang.label;
     label.style.color = theme.textSub;
 
-    entry.appendChild(badge);
+    entry.appendChild(icon);
     entry.appendChild(label);
     container.appendChild(entry);
   }
@@ -193,13 +186,12 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
 
   const theme = buildTheme();
 
+  // 矩形（left/top/width/height）は updateZonePositions が実カード位置から算出する。
+  // 固定 50% をやめることで、縮尺・解像度に依らずカードが必ずゾーン内に収まる。
   frontendZone = document.createElement("div");
   frontendZone.style.cssText = [
     "position:absolute",
-    "top:8px",
-    "left:8px",
-    "width:calc(50% - 16px)",
-    "height:calc(100% - 16px)",
+    "display:none",
     `background:${theme.apiCall}0d`,
     `border:1px solid ${theme.apiCall}35`,
     "border-radius:8px",
@@ -217,10 +209,7 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
   backendZone = document.createElement("div");
   backendZone.style.cssText = [
     "position:absolute",
-    "top:8px",
-    "right:8px",
-    "width:calc(50% - 16px)",
-    "height:calc(100% - 16px)",
+    "display:none",
     `background:${theme.route}0d`,
     `border:1px solid ${theme.route}35`,
     "border-radius:8px",
@@ -379,9 +368,38 @@ function computeLayout(
 // HTMLノードカード（オーケストレーション）
 // ─────────────────────────────────────────
 
-type NodeCardEntry = { el: HTMLElement; nodeId: string };
+type NodeCardEntry = { el: HTMLElement; nodeId: string; side: "backend" | "frontend" };
 let nodeCardEls: NodeCardEntry[] = [];
 let nodeCardUpdateFn: (() => void) | null = null;
+
+/** 表示中エッジ（structural+linkage）から構築する無向隣接。連鎖ホバーの減光に使う。 */
+let hoverAdj = new Map<string, Set<string>>();
+
+/** `hoverAdj` を `edges` から再構築する（両方向）。 */
+function buildHoverAdjacency(edges: GraphEdge[]): void {
+  hoverAdj = new Map();
+  const link = (a: string, b: string): void => {
+    (hoverAdj.get(a) ?? hoverAdj.set(a, new Set()).get(a)!).add(b);
+    (hoverAdj.get(b) ?? hoverAdj.set(b, new Set()).get(b)!).add(a);
+  };
+  for (const e of edges) link(e.source, e.target);
+}
+
+/** `startId` から無向 BFS で到達するノード ID 集合（起点含む）を返す。 */
+function reachableNodeIds(startId: string): Set<string> {
+  const visited = new Set<string>([startId]);
+  const queue = [startId];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const next of hoverAdj.get(cur) ?? []) {
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return visited;
+}
 
 function clearNodeCards(): void {
   if (nodeCardUpdateFn) {
@@ -412,6 +430,51 @@ function updateNodeCardPositions(): void {
     const extraX = depth * INDENT_X * zoom;
     el.style.transform = `translate(${screenX - hw * zoom + extraX}px, ${screenY - hh * zoom}px) scale(${zoom})`;
   }
+
+  updateZonePositions();
+}
+
+/** ゾーンパディング（カード bbox の外側余白, px）。 */
+const ZONE_PADDING = 14;
+/** ゾーン上部のヘッダ（見出し+件数）用に確保する追加の高さ（px）。 */
+const ZONE_HEADER_SPACE = 30;
+
+/**
+ * フロント/バック背景ゾーンを、実際のカード画面位置から算出した矩形に合わせる。
+ * 固定 50% ではなく実コンテンツ基準にすることで、カードが必ずゾーン内に収まる。
+ */
+function updateZonePositions(): void {
+  const containerRect = graphContainer.getBoundingClientRect();
+
+  const fit = (side: "backend" | "frontend", zone: HTMLElement | null): void => {
+    if (!zone) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let count = 0;
+    for (const { el, side: cardSide } of nodeCardEls) {
+      if (cardSide !== side) continue;
+      const r = el.getBoundingClientRect();
+      minX = Math.min(minX, r.left - containerRect.left);
+      minY = Math.min(minY, r.top - containerRect.top);
+      maxX = Math.max(maxX, r.right - containerRect.left);
+      maxY = Math.max(maxY, r.bottom - containerRect.top);
+      count++;
+    }
+    if (count === 0) {
+      zone.style.display = "none";
+      return;
+    }
+    zone.style.display = "block";
+    zone.style.left = `${minX - ZONE_PADDING}px`;
+    zone.style.top = `${minY - ZONE_HEADER_SPACE}px`;
+    zone.style.width = `${maxX - minX + ZONE_PADDING * 2}px`;
+    zone.style.height = `${maxY - minY + ZONE_HEADER_SPACE + ZONE_PADDING}px`;
+  };
+
+  fit("frontend", frontendZone);
+  fit("backend", backendZone);
 }
 
 function renderNodeCards(
@@ -424,6 +487,9 @@ function renderNodeCards(
   if (!cy) return;
 
   const theme = buildTheme();
+
+  // 連鎖ホバー用の無向隣接を構築
+  buildHoverAdjacency(edges);
 
   // ノードごとの接続数を集計
   const connCount = new Map<string, number>();
@@ -445,10 +511,10 @@ function renderNodeCards(
       card.style.boxShadow = `0 0 0 2px ${theme.selected}`;
     });
 
-    // 右クリック: 連携関数コピー用の日本語コンテキストメニューを開く（sourceLocation を持つ枠のみ）
+    // 右クリック: 連鎖関数コピー用の日本語コンテキストメニューを開く（functionId を持つ枠のみ）
     card.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      if (node.sourceLocation) {
+      if (node.functionId) {
         cardContextMenu.open(e.clientX, e.clientY, node);
       }
     });
@@ -468,27 +534,14 @@ function renderNodeCards(
       });
     }
 
-    // ホバー: 非隣接ノードを減光
+    // ホバー: 連鎖（無向で到達可能な全ノード）以外を減光
     card.addEventListener("mouseenter", () => {
-      if (!cy) return;
-      const cyNode = cy.getElementById(node.id);
-      if (cyNode.length) {
-        cy.elements().addClass("dim");
-        cyNode.closedNeighborhood().removeClass("dim");
-      }
-      const neighborIds = cyNode.length
-        ? new Set(
-            cyNode
-              .closedNeighborhood()
-              .nodes()
-              .map((n: { id(): string }) => n.id()),
-          )
-        : new Set<string>();
+      const reachable = reachableNodeIds(node.id);
       for (const { el, nodeId: nid } of nodeCardEls) {
-        el.style.opacity = neighborIds.has(nid) ? "" : "0.24";
+        el.style.opacity = reachable.has(nid) ? "" : "0.24";
       }
       for (const { el, sourceId, targetId } of getLinkageLineEls()) {
-        el.style.opacity = neighborIds.has(sourceId) || neighborIds.has(targetId) ? "" : "0.24";
+        el.style.opacity = reachable.has(sourceId) && reachable.has(targetId) ? "" : "0.24";
       }
     });
 
@@ -503,7 +556,7 @@ function renderNodeCards(
     });
 
     graphContainer.appendChild(card);
-    nodeCardEls.push({ el: card, nodeId: node.id });
+    nodeCardEls.push({ el: card, nodeId: node.id, side: node.side });
   }
 
   const updateFn = () => updateNodeCardPositions();

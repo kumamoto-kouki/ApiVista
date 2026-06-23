@@ -253,7 +253,7 @@ describe("webview/main.ts", () => {
 
     expect(postMessageMock).toHaveBeenCalledWith({
       type: "copyLinked",
-      payload: { file: "backend/routes/users.ts", line: 10, side: "backend" },
+      payload: { functionId: "backend:fn-getUser" },
     });
   });
 

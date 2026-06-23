@@ -1,16 +1,10 @@
 import type { Warning } from "../../route-linkage/models.js";
+import { languageStyleForPath } from "./languageStyle.js";
 import type { GraphNode } from "./projectDepth.js";
 import type { Theme } from "./themeManager.js";
 import { inferWarningKind, translateReason, WARNING_KIND_COLOR } from "./warningFormatter.js";
 
 export type NodeKind = "route" | "apiCall" | "file" | "function";
-
-export const NODE_INITIALS: Record<NodeKind, string> = {
-  route: "R",
-  apiCall: "API",
-  file: "F",
-  function: "fn",
-};
 
 export const NODE_LABELS: Record<NodeKind, string> = {
   route: "ルート",
@@ -28,8 +22,9 @@ export function createNodeCard(
   warnings: Warning[],
   theme: Theme,
 ): HTMLElement {
-  const kindColor = theme[node.kind as NodeKind] as string;
-  const borderColor = node.unmatched ? theme.unmatched : kindColor;
+  // 配色は「ファイル拡張子（言語）」基準。file 深度は label がパスなので label を使う。
+  const lang = languageStyleForPath(node.sourceLocation?.file ?? node.label);
+  const borderColor = node.unmatched ? theme.unmatched : lang.color;
 
   const card = document.createElement("div");
   card.className = "node-card";
@@ -57,18 +52,16 @@ export function createNodeCard(
   const header = document.createElement("div");
   header.style.cssText = "display:flex;align-items:center;gap:5px;margin-bottom:4px;";
 
+  // 左上の言語ロゴ（SVG）。種別イニシャルバッジを置き換える。
   const badge = document.createElement("span");
-  badge.textContent = NODE_INITIALS[node.kind as NodeKind] ?? "?";
+  badge.title = lang.label;
+  badge.innerHTML = lang.iconSvg;
   badge.style.cssText = [
-    `background:${kindColor}`,
-    "color:#1f1f1f",
-    "font-size:9px",
-    "font-weight:700",
-    "padding:1px 5px",
-    "border-radius:3px",
-    "font-family:ui-monospace,Menlo,monospace",
+    "width:16px",
+    "height:16px",
+    "display:inline-flex",
     "flex-shrink:0",
-    "line-height:1.5",
+    "line-height:0",
   ].join(";");
 
   const typeName = document.createElement("span");

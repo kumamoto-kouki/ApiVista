@@ -35,7 +35,7 @@
 import * as vscode from "vscode";
 
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
-import { copyLinkedFromNode } from "./functionCopier.js";
+import { copyLinkedChain } from "./functionCopier.js";
 import * as graphPanel from "./graphPanel.js";
 import { checkPreflight, PreflightError } from "./preflightChecker.js";
 import { createReanalysisWatcher } from "./reanalysisWatcher.js";
@@ -153,9 +153,9 @@ function openPanelAndStartWatcher(
         activeWatcher = undefined;
       }
     },
-    // 枠の右クリック → 連携関数コピー。最新 output は graphPanel が供給する。
+    // 枠の右クリック → 連鎖関数コピー。最新 output は graphPanel が供給する。
     (latestOutput, payload) =>
-      void runCopyLinkedFromNode(latestOutput, payload, backendRoot, frontendRoot),
+      void runCopyLinkedChain(latestOutput, payload, backendRoot, frontendRoot),
   );
   if (!isNewPanel) {
     return;
@@ -222,18 +222,16 @@ async function runAnalyzeActiveFile(
   openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
 }
 
-/** 枠の右クリック（webview）から連携関数を Markdown コピーする。 */
-async function runCopyLinkedFromNode(
+/** 枠の右クリック（webview）から、連結する全関数を Markdown コピーする。 */
+async function runCopyLinkedChain(
   output: Awaited<ReturnType<typeof analyze>>,
-  payload: { file: string; line: number; side: "backend" | "frontend" },
+  payload: { functionId: string },
   backendRoot: string,
   frontendRoot: string,
 ): Promise<void> {
-  const count = await copyLinkedFromNode(output, payload, backendRoot, frontendRoot);
+  const count = await copyLinkedChain(output, payload.functionId, backendRoot, frontendRoot);
   if (count === 0) {
-    void vscode.window.showInformationMessage(
-      "ApiVista: この枠には連携関数が見つかりませんでした。",
-    );
+    void vscode.window.showInformationMessage("ApiVista: 連携する関数が見つかりませんでした。");
   } else {
     void vscode.window.showInformationMessage(
       `ApiVista: ${count}個の関数をクリップボードにコピーしました。`,

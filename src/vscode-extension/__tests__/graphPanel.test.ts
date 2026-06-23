@@ -214,7 +214,7 @@ describe("graphPanel.showOrReveal", () => {
     const onMessageHandler = panel.webview.onDidReceiveMessage.mock.calls[0][0] as (
       message: unknown,
     ) => void;
-    const payload = { file: "backend/routes/users.py", line: 10, side: "backend" as const };
+    const payload = { functionId: "backend:fn-getUser" };
     onMessageHandler({ type: "copyLinked", payload });
 
     expect(onCopyLinked).toHaveBeenCalledTimes(1);
@@ -236,7 +236,7 @@ describe("graphPanel.showOrReveal", () => {
     const onMessageHandler = panel.webview.onDidReceiveMessage.mock.calls[0][0] as (
       message: unknown,
     ) => void;
-    const payload = { file: "frontend/api/users.ts", line: 5, side: "frontend" as const };
+    const payload = { functionId: "frontend:fn-fetchUser" };
     onMessageHandler({ type: "copyLinked", payload });
 
     expect(onCopyLinked).toHaveBeenCalledWith(updatedOutput, payload);

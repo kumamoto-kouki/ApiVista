@@ -38,10 +38,7 @@ let currentPanel: vscode.WebviewPanel | undefined;
 let latestOutput: LinkageOutput | undefined;
 
 /** `copyLinked` メッセージを処理するためにホスト側（extension.ts）が注入するコールバック。 */
-export type CopyLinkedHandler = (
-  output: LinkageOutput,
-  payload: { file: string; line: number; side: "backend" | "frontend" },
-) => void;
+export type CopyLinkedHandler = (output: LinkageOutput, payload: { functionId: string }) => void;
 
 function handleNodeClick(
   payload: { file: string; line: number },
