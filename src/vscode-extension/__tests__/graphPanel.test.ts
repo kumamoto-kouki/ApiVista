@@ -201,6 +201,47 @@ describe("graphPanel.showOrReveal", () => {
     expect(sourceJumpRevealMock).toHaveBeenCalledWith({ file: "backend/app/main.py", line: 42 });
   });
 
+  it("Webviewから'copyLinked'メッセージを受信すると、onCopyLinkedを最新outputとpayloadで呼び出す", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+    const initialOutput = makeLinkageOutput();
+    const onCopyLinked = vi.fn();
+
+    const { showOrReveal } = await import("../graphPanel.js");
+
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, initialOutput, undefined, onCopyLinked);
+
+    const onMessageHandler = panel.webview.onDidReceiveMessage.mock.calls[0][0] as (
+      message: unknown,
+    ) => void;
+    const payload = { file: "backend/routes/users.py", line: 10, side: "backend" as const };
+    onMessageHandler({ type: "copyLinked", payload });
+
+    expect(onCopyLinked).toHaveBeenCalledTimes(1);
+    expect(onCopyLinked).toHaveBeenCalledWith(initialOutput, payload);
+  });
+
+  it("postLinkageUpdate後の'copyLinked'では、onCopyLinkedに更新後のoutputが渡る", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+    const initialOutput = makeLinkageOutput();
+    const updatedOutput = makeLinkageOutput();
+    const onCopyLinked = vi.fn();
+
+    const { showOrReveal, postLinkageUpdate } = await import("../graphPanel.js");
+
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, initialOutput, undefined, onCopyLinked);
+    postLinkageUpdate(updatedOutput);
+
+    const onMessageHandler = panel.webview.onDidReceiveMessage.mock.calls[0][0] as (
+      message: unknown,
+    ) => void;
+    const payload = { file: "frontend/api/users.ts", line: 5, side: "frontend" as const };
+    onMessageHandler({ type: "copyLinked", payload });
+
+    expect(onCopyLinked).toHaveBeenCalledWith(updatedOutput, payload);
+  });
+
   it("sourceJump.revealが失敗(reject)した場合、showErrorMessageを呼び出し、パネルのpostMessageは追加で呼ばれない", async () => {
     const panel = makeFakePanel();
     createWebviewPanelMock.mockReturnValue(panel);

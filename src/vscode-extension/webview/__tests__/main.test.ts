@@ -230,6 +230,33 @@ describe("webview/main.ts", () => {
     });
   });
 
+  it("opens the card context menu on right-click and posts copyLinked when the menu item is clicked", async () => {
+    await import("../main.js");
+
+    const output = buildOutput({
+      linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }],
+    });
+    dispatchLinkageData(output);
+
+    postMessageMock.mockClear();
+
+    // 枠（カード）を右クリック → 日本語コンテキストメニューを表示（contextmenu はカードへバブルする）
+    const codeLink = document.querySelector<HTMLElement>("[data-code-link]");
+    expect(codeLink).not.toBeNull();
+    codeLink!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+
+    // メニュー項目「連携関数をコピー」をクリック
+    const menuItem = document.body.querySelector<HTMLElement>('[role="menuitem"]');
+    expect(menuItem).not.toBeNull();
+    expect(menuItem!.textContent).toBe("連携関数をコピー");
+    menuItem!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: "copyLinked",
+      payload: { file: "backend/routes/users.ts", line: 10, side: "backend" },
+    });
+  });
+
   it("does not post nodeClick when Cytoscape node tap fires (code jump is [data-code-link] only)", async () => {
     await import("../main.js");
 
@@ -322,7 +349,7 @@ describe("webview/main.ts", () => {
     dispatchLinkageData(output);
 
     // cy.on must be registered for: "tap"(node), "tap"(background), "mouseover"(node), "mouseout"(node)
-    const eventNames = cyOnMock.mock.calls.map(([eventName]: [string]) => eventName);
+    const eventNames = cyOnMock.mock.calls.map((call: unknown[]) => call[0] as string);
     expect(eventNames).toContain("tap");
     expect(eventNames).toContain("mouseover");
     expect(eventNames).toContain("mouseout");

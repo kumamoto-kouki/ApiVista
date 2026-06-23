@@ -13,7 +13,11 @@ import type { LinkageOutput } from "../route-linkage/models.js";
 /** ホスト→Webview方向のメッセージ。現時点では連携データ送信のみ（将来拡張に備え合併型のまま保持）。 */
 export type HostToWebviewMessage = { type: "linkageData"; payload: LinkageOutput };
 
-/** Webview→ホスト方向のメッセージ。初期化完了通知とノードクリック（ソースジャンプ要求）。 */
+/** Webview→ホスト方向のメッセージ。初期化完了通知・ノードクリック（ソースジャンプ要求）・連携関数コピー要求。 */
 export type WebviewToHostMessage =
   | { type: "ready" }
-  | { type: "nodeClick"; payload: { file: string; line: number } };
+  | { type: "nodeClick"; payload: { file: string; line: number } }
+  | {
+      type: "copyLinked";
+      payload: { file: string; line: number; side: "backend" | "frontend" };
+    };

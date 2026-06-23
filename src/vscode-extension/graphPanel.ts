@@ -31,6 +31,18 @@ export interface GraphPanelContext {
 
 let currentPanel: vscode.WebviewPanel | undefined;
 
+/**
+ * Webview が現在表示している最新の `LinkageOutput`。`copyLinked` 受信時のコピー対象として使う。
+ * `createPanel`（初期値）と `postLinkageUpdate`（再解析更新）で同期する。
+ */
+let latestOutput: LinkageOutput | undefined;
+
+/** `copyLinked` メッセージを処理するためにホスト側（extension.ts）が注入するコールバック。 */
+export type CopyLinkedHandler = (
+  output: LinkageOutput,
+  payload: { file: string; line: number; side: "backend" | "frontend" },
+) => void;
+
 function handleNodeClick(
   payload: { file: string; line: number },
   panel: vscode.WebviewPanel,
@@ -46,6 +58,7 @@ function createPanel(
   context: GraphPanelContext,
   initialOutput: LinkageOutput,
   onDidDispose?: () => void,
+  onCopyLinked?: CopyLinkedHandler,
 ): vscode.WebviewPanel {
   const localResourceRoot = vscode.Uri.joinPath(context.extensionUri, "media", "webview");
 
@@ -63,12 +76,19 @@ function createPanel(
     }
     if (message.type === "nodeClick") {
       handleNodeClick(message.payload, panel);
+      return;
+    }
+    if (message.type === "copyLinked") {
+      if (latestOutput) {
+        onCopyLinked?.(latestOutput, message.payload);
+      }
     }
   });
 
   panel.onDidDispose(() => {
     if (currentPanel === panel) {
       currentPanel = undefined;
+      latestOutput = undefined;
     }
     onDidDispose?.();
   });
@@ -93,13 +113,15 @@ export function showOrReveal(
   context: GraphPanelContext,
   initialOutput: LinkageOutput,
   onDidDispose?: () => void,
+  onCopyLinked?: CopyLinkedHandler,
 ): boolean {
   if (currentPanel) {
     currentPanel.reveal();
     return false;
   }
 
-  currentPanel = createPanel(context, initialOutput, onDidDispose);
+  latestOutput = initialOutput;
+  currentPanel = createPanel(context, initialOutput, onDidDispose, onCopyLinked);
   return true;
 }
 
@@ -113,5 +135,6 @@ export function postLinkageUpdate(output: LinkageOutput): void {
   if (!currentPanel) {
     return;
   }
+  latestOutput = output;
   currentPanel.webview.postMessage({ type: "linkageData", payload: output });
 }

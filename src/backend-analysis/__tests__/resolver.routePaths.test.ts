@@ -42,7 +42,7 @@ function sampleModuleMap(): ModuleMap {
   for (const [m, p] of moduleToPath) {
     pathToModule.set(p, m);
   }
-  return { moduleToPath, pathToModule, exportedNames: new Map() };
+  return { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 }
 
 async function buildSample(): Promise<{

@@ -49,7 +49,7 @@ function sampleModuleMap(): ModuleMap {
   for (const [m, p] of moduleToPath) {
     pathToModule.set(p, m);
   }
-  return { moduleToPath, pathToModule, exportedNames: new Map() };
+  return { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 }
 
 async function buildSamplePerFile(
@@ -186,7 +186,7 @@ describe("resolveSchemaRefs", () => {
     for (const [m, p] of moduleToPath) {
       pathToModule.set(p, m);
     }
-    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map() };
+    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 
     const modelsSrc = [
       "from pydantic import BaseModel",
@@ -245,7 +245,7 @@ describe("resolveSchemaRefs", () => {
     for (const [m, p] of moduleToPath) {
       pathToModule.set(p, m);
     }
-    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map() };
+    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 
     const modelsSrc = ["class Plain:", "    x: int", ""].join("\n");
     const apiSrc = [
@@ -285,7 +285,7 @@ describe("resolveSchemaRefs", () => {
     for (const [m, p] of moduleToPath) {
       pathToModule.set(p, m);
     }
-    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map() };
+    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 
     // Imports `Ghost` from a module that is not in the perFile/registry.
     const apiSrc = [

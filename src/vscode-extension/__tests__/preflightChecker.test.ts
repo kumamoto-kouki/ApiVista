@@ -6,9 +6,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const existsSyncMock = vi.fn<[string], boolean>();
+const existsSyncMock = vi.fn();
 const readdirSyncMock = vi.fn();
-const readFileSyncMock = vi.fn<[string, string], string>();
+const readFileSyncMock = vi.fn();
 
 vi.mock("node:fs", () => ({
   existsSync: (p: string) => existsSyncMock(p),

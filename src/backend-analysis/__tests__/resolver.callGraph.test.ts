@@ -42,7 +42,7 @@ function sampleModuleMap(): ModuleMap {
   for (const [m, p] of moduleToPath) {
     pathToModule.set(p, m);
   }
-  return { moduleToPath, pathToModule, exportedNames: new Map() };
+  return { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 }
 
 async function buildSample(): Promise<{
@@ -149,6 +149,7 @@ describe("buildCallGraph", () => {
       moduleToPath: new Map([["pkg.cycle", "cycle.py"]]),
       pathToModule: new Map([["cycle.py", "pkg.cycle"]]),
       exportedNames: new Map(),
+      parsedFiles: new Map(),
     };
     const fnA = perFile.get(fileId)?.functionDefinitions.find((d) => d.name === "a");
     if (fnA === undefined) {

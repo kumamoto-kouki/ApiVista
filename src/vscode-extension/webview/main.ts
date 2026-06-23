@@ -13,6 +13,7 @@
  */
 import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from "cytoscape";
 
+import { createCardContextMenu } from "./cardContextMenu.js";
 import { createDepthSwitchControl } from "./depthSwitchControl.js";
 import { createNodeCard, NODE_INITIALS, NODE_LABELS, type NodeKind } from "./nodeCardRenderer.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
@@ -41,6 +42,16 @@ declare function acquireVsCodeApi(): {
 const DEFAULT_DEPTH: Depth = "route";
 
 const vscodeApi = acquireVsCodeApi();
+
+// 枠（ノードカード）右クリック用コンテキストメニュー。選択で連携関数コピーを要求する。
+const cardContextMenu = createCardContextMenu((node) => {
+  if (node.sourceLocation) {
+    vscodeApi.postMessage({
+      type: "copyLinked",
+      payload: { ...node.sourceLocation, side: node.side },
+    });
+  }
+});
 
 const appRoot = document.getElementById("app") ?? document.body;
 appRoot.style.cssText = "display:flex;flex-direction:column;height:100%;overflow:hidden;";
@@ -379,6 +390,7 @@ function clearNodeCards(): void {
   }
   for (const { el } of nodeCardEls) el.remove();
   nodeCardEls = [];
+  cardContextMenu.close();
   clearTreeGuides(cy);
   clearLinkageLines();
 }
@@ -431,6 +443,14 @@ function renderNodeCards(
         el.style.boxShadow = "";
       }
       card.style.boxShadow = `0 0 0 2px ${theme.selected}`;
+    });
+
+    // 右クリック: 連携関数コピー用の日本語コンテキストメニューを開く（sourceLocation を持つ枠のみ）
+    card.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (node.sourceLocation) {
+        cardContextMenu.open(e.clientX, e.clientY, node);
+      }
     });
 
     // コードジャンプリンク: ホバーで下線、クリックでコードジャンプ
@@ -632,6 +652,11 @@ function renderGraph(): void {
 
   // ゾーンは cy 生成後に追加してキャンバス上に表示（z-index:2 > canvas:auto）
   renderBackgroundZones(frontendCount, backendCount);
+
+  // pan/zoom でカードが移動するため、開いているコンテキストメニューは閉じる。
+  cy.on("pan zoom", () => {
+    cardContextMenu.close();
+  });
 
   // ノードタップ（不可視ノード上のクリックも Cytoscape が受け取る場合の fallback）
   cy.on("tap", "node", (event) => {

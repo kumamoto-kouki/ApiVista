@@ -11,7 +11,7 @@ function makeMap(modulePaths: Record<string, string>): ModuleMap {
     moduleToPath.set(module, fileId);
     pathToModule.set(fileId, module);
   }
-  return { moduleToPath, pathToModule, exportedNames: new Map() };
+  return { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
 }
 
 describe("resolveRelativeModule", () => {

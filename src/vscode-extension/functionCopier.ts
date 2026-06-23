@@ -7,7 +7,7 @@
  * 3. 各関数のコードを openTextDocument + DocumentSymbol の range から抽出
  * 4. Markdown 生成 → クリップボードへコピー
  */
-import { relative } from "node:path";
+import { join, relative } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -247,4 +247,34 @@ export async function copyFunctionWithLinked(
   const markdown = buildMarkdown(focal, linked, routeLabel);
   await vscode.env.clipboard.writeText(markdown);
   return 1 + linked.length;
+}
+
+/**
+ * グラフの枠（ノード）情報からドキュメントを開き、`copyFunctionWithLinked` に委譲する。
+ *
+ * Webview のノードカード右クリックで得られる `sourceLocation`(file+line) と `side` から
+ * 絶対パスを解決し、その位置を「カーソル」とみなして既存のコピーロジックを再利用する。
+ *
+ * @param output キャッシュ済み / 表示中の LinkageOutput
+ * @param payload 枠の位置情報（root 相対 file・1始まり line・side）
+ * @param backendRoot バックエンドルートの絶対パス
+ * @param frontendRoot フロントエンドルートの絶対パス
+ * @returns コピーした関数数（0 = 対象なし / ファイルを開けない）
+ */
+export async function copyLinkedFromNode(
+  output: LinkageOutput,
+  payload: { file: string; line: number; side: "backend" | "frontend" },
+  backendRoot: string,
+  frontendRoot: string,
+): Promise<number> {
+  const root = payload.side === "backend" ? backendRoot : frontendRoot;
+  const absPath = join(root, payload.file);
+  let doc: vscode.TextDocument;
+  try {
+    doc = await vscode.workspace.openTextDocument(absPath);
+  } catch {
+    return 0;
+  }
+  const position = new vscode.Position(Math.max(0, payload.line - 1), 0);
+  return copyFunctionWithLinked(doc, position, output, backendRoot, frontendRoot);
 }

@@ -35,7 +35,7 @@
 import * as vscode from "vscode";
 
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
-import { copyFunctionWithLinked } from "./functionCopier.js";
+import { copyLinkedFromNode } from "./functionCopier.js";
 import * as graphPanel from "./graphPanel.js";
 import { checkPreflight, PreflightError } from "./preflightChecker.js";
 import { createReanalysisWatcher } from "./reanalysisWatcher.js";
@@ -144,12 +144,19 @@ function openPanelAndStartWatcher(
   frontendRoot: string,
 ): void {
   const watcherRef: { current: ReanalysisWatcher | undefined } = { current: undefined };
-  const isNewPanel = graphPanel.showOrReveal({ extensionUri: context.extensionUri }, output, () => {
-    watcherRef.current?.dispose();
-    if (activeWatcher === watcherRef.current) {
-      activeWatcher = undefined;
-    }
-  });
+  const isNewPanel = graphPanel.showOrReveal(
+    { extensionUri: context.extensionUri },
+    output,
+    () => {
+      watcherRef.current?.dispose();
+      if (activeWatcher === watcherRef.current) {
+        activeWatcher = undefined;
+      }
+    },
+    // 枠の右クリック → 連携関数コピー。最新 output は graphPanel が供給する。
+    (latestOutput, payload) =>
+      void runCopyLinkedFromNode(latestOutput, payload, backendRoot, frontendRoot),
+  );
   if (!isNewPanel) {
     return;
   }
@@ -215,39 +222,17 @@ async function runAnalyzeActiveFile(
   openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
 }
 
-async function runCopyFunctionWithLinked(storageDir: string | undefined): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) return;
-  if (!storageDir) {
-    void vscode.window.showErrorMessage(
-      "ApiVista: 先に「Show Route Linkage Graph」で解析を実行してください。",
-    );
-    return;
-  }
-  const cached = await loadCachedResult(storageDir);
-  if (!cached) {
-    void vscode.window.showErrorMessage(
-      "ApiVista: 解析結果がキャッシュされていません。先に解析を実行してください。",
-    );
-    return;
-  }
-  let scanned: { backendRoot: string; frontendRoot: string };
-  try {
-    scanned = validate();
-  } catch (error) {
-    reportError(error);
-    return;
-  }
-  const count = await copyFunctionWithLinked(
-    editor.document,
-    editor.selection.active,
-    cached,
-    scanned.backendRoot,
-    scanned.frontendRoot,
-  );
+/** 枠の右クリック（webview）から連携関数を Markdown コピーする。 */
+async function runCopyLinkedFromNode(
+  output: Awaited<ReturnType<typeof analyze>>,
+  payload: { file: string; line: number; side: "backend" | "frontend" },
+  backendRoot: string,
+  frontendRoot: string,
+): Promise<void> {
+  const count = await copyLinkedFromNode(output, payload, backendRoot, frontendRoot);
   if (count === 0) {
     void vscode.window.showInformationMessage(
-      "ApiVista: カーソルを関数内に置いてください（連携関数が見つかりませんでした）。",
+      "ApiVista: この枠には連携関数が見つかりませんでした。",
     );
   } else {
     void vscode.window.showInformationMessage(
@@ -268,9 +253,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("apivista.reanalyze", () => runReanalyze(wasmDir, storageDir)),
     vscode.commands.registerCommand("apivista.analyzeActiveFile", (uri?: vscode.Uri) =>
       runAnalyzeActiveFile(context, wasmDir, storageDir, uri),
-    ),
-    vscode.commands.registerCommand("apivista.copyFunctionWithLinked", () =>
-      runCopyFunctionWithLinked(storageDir),
     ),
   );
 }

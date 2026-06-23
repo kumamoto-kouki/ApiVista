@@ -16,19 +16,15 @@
     "commands": [
       {
         "command": "apivista.showGraph",
-        "title": "ApiVista: Show Route Linkage Graph"
+        "title": "ApiVista: ルート連携グラフを表示"
       },
       {
         "command": "apivista.reanalyze",
-        "title": "ApiVista: Reanalyze Workspace"
+        "title": "ApiVista: ワークスペースを再解析"
       },
       {
         "command": "apivista.analyzeActiveFile",
-        "title": "ApiVista: Analyze This File's Routes"
-      },
-      {
-        "command": "apivista.copyFunctionWithLinked",
-        "title": "ApiVista: Copy Function with Linked"
+        "title": "ApiVista: このファイルのルートを解析"
       }
     ],
     "menus": {
@@ -37,11 +33,6 @@
           "command": "apivista.analyzeActiveFile",
           "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
           "group": "apivista@1"
-        },
-        {
-          "command": "apivista.copyFunctionWithLinked",
-          "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
-          "group": "apivista@2"
         }
       ],
       "explorer/context": [

@@ -27,6 +27,9 @@ function describeWebviewToHostMessage(message: WebviewToHostMessage): string {
     case "nodeClick":
       // "nodeClick" 分岐では payload.file / payload.line にアクセス可能。
       return `nodeClick:${message.payload.file}:${message.payload.line}`;
+    case "copyLinked":
+      // "copyLinked" 分岐では payload.file / payload.line / payload.side にアクセス可能。
+      return `copyLinked:${message.payload.file}:${message.payload.line}:${message.payload.side}`;
   }
 }
 
@@ -70,5 +73,28 @@ describe("webviewProtocol", () => {
     };
 
     expect(describeWebviewToHostMessage(message)).toBe("nodeClick:frontend/src/api/users.ts:7");
+  });
+
+  it("constructs a WebviewToHostMessage of type 'copyLinked' carrying a file/line/side payload", () => {
+    const message: WebviewToHostMessage = {
+      type: "copyLinked",
+      payload: { file: "backend/routes/users.py", line: 10, side: "backend" },
+    };
+
+    expect(message.type).toBe("copyLinked");
+    expect(message.payload.file).toBe("backend/routes/users.py");
+    expect(message.payload.line).toBe(10);
+    expect(message.payload.side).toBe("backend");
+  });
+
+  it("narrows to the 'copyLinked' branch via discriminated-union switch, exposing payload.side", () => {
+    const message: WebviewToHostMessage = {
+      type: "copyLinked",
+      payload: { file: "frontend/api/users.ts", line: 5, side: "frontend" },
+    };
+
+    expect(describeWebviewToHostMessage(message)).toBe(
+      "copyLinked:frontend/api/users.ts:5:frontend",
+    );
   });
 });
