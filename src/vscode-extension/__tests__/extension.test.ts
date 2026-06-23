@@ -61,6 +61,15 @@ class FakeCancellationError extends Error {
   }
 }
 
+class FakePreflightError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PreflightError";
+  }
+}
+
+const checkPreflightMock = vi.fn();
+
 vi.mock("vscode", () => ({
   Uri: {
     joinPath: vi.fn((_base: { fsPath: string }, ...parts: string[]) => ({
@@ -104,6 +113,11 @@ const saveCachedResultMock = vi.fn();
 vi.mock("../resultCache.js", () => ({
   loadCachedResult: (...args: unknown[]) => loadCachedResultMock(...args),
   saveCachedResult: (...args: unknown[]) => saveCachedResultMock(...args),
+}));
+
+vi.mock("../preflightChecker.js", () => ({
+  checkPreflight: (...args: unknown[]) => checkPreflightMock(...args),
+  PreflightError: FakePreflightError,
 }));
 
 const BACKEND_ROOT = "/workspace/backend";
@@ -178,6 +192,8 @@ describe("extension.activate", () => {
     loadCachedResultMock.mockResolvedValue(undefined); // デフォルトはキャッシュなし
     saveCachedResultMock.mockReset();
     saveCachedResultMock.mockResolvedValue(undefined);
+    checkPreflightMock.mockReset();
+    checkPreflightMock.mockReturnValue(undefined); // デフォルトはプリフライト通過
     makeWithProgressRunTask();
   });
 
@@ -276,6 +292,26 @@ describe("extension.activate", () => {
     await handler();
 
     expect(showErrorMessageMock).toHaveBeenCalledWith(scopeError.message);
+    expect(analyzeMock).not.toHaveBeenCalled();
+    expect(showOrRevealMock).not.toHaveBeenCalled();
+  });
+
+  it("showGraph実行時、checkPreflightがPreflightErrorをthrowした場合はshowErrorMessageを呼び、analyze/showOrRevealは呼ばれない", async () => {
+    const scanned = { backendRoot: BACKEND_ROOT, frontendRoot: FRONTEND_ROOT };
+    validateMock.mockReturnValue(scanned);
+    const preflightError = new FakePreflightError("WASM ファイルが見つかりません");
+    checkPreflightMock.mockImplementation(() => {
+      throw preflightError;
+    });
+
+    const { activate } = await import("../extension.js");
+    const context = makeFakeContext();
+    activate(context as never);
+
+    const handler = getRegisteredHandler("apivista.showGraph");
+    await handler();
+
+    expect(showErrorMessageMock).toHaveBeenCalledWith(preflightError.message);
     expect(analyzeMock).not.toHaveBeenCalled();
     expect(showOrRevealMock).not.toHaveBeenCalled();
   });

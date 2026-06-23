@@ -37,6 +37,7 @@ import * as vscode from "vscode";
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
 import { copyFunctionWithLinked } from "./functionCopier.js";
 import * as graphPanel from "./graphPanel.js";
+import { checkPreflight, PreflightError } from "./preflightChecker.js";
 import { createReanalysisWatcher } from "./reanalysisWatcher.js";
 import type { ReanalysisWatcher } from "./reanalysisWatcher.js";
 import { loadCachedResult, saveCachedResult } from "./resultCache.js";
@@ -48,9 +49,13 @@ let activeWatcher: ReanalysisWatcher | undefined;
 /** 解析ログを出力する OutputChannel。activate 時に生成し subscriptions で管理する。 */
 let outputChannel: vscode.OutputChannel | undefined;
 
-/** `ScopeError`/`AnalysisError`を`showErrorMessage`で表示する共通ハンドラ。 */
+/** `ScopeError`/`AnalysisError`/`PreflightError`を`showErrorMessage`で表示する共通ハンドラ。 */
 function reportError(error: unknown): void {
-  if (error instanceof ScopeError || error instanceof AnalysisError) {
+  if (
+    error instanceof ScopeError ||
+    error instanceof AnalysisError ||
+    error instanceof PreflightError
+  ) {
     void vscode.window.showErrorMessage(error.message);
     return;
   }
@@ -76,6 +81,14 @@ async function runAnalysis(
   }
 
   const { backendRoot, frontendRoot } = scanned;
+
+  try {
+    checkPreflight(backendRoot, wasmDir);
+  } catch (error) {
+    reportError(error);
+    return null;
+  }
+
   const channel = outputChannel;
 
   const timestamp = new Date().toLocaleTimeString();
