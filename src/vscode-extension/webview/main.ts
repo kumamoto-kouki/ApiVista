@@ -888,6 +888,10 @@ function renderGraph(): void {
   // ゾーンは cy 生成後に追加してキャンバス上に表示（z-index:2 > canvas:auto）
   renderBackgroundZones(frontendCount, backendCount);
 
+  // cy.destroy() が graphContainer の全子要素を除去するため、検索ボックスを再マウントして復帰させる
+  // （これが無いと再描画後に Ctrl+F で開いてもボックスが DOM から消えていて表示されない）。
+  searchBox.mount();
+
   // pan/zoom でカードが移動するため、開いているコンテキストメニューは閉じる。
   cy.on("pan zoom", () => {
     cardContextMenu.close();

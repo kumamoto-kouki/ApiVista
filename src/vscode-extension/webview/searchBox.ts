@@ -28,6 +28,13 @@ export interface SearchBox {
   isOpen(): boolean;
   /** 件数表示を更新する（current は 1 始まり、該当なしは 0/0）。 */
   setCount(current: number, total: number): void;
+  /**
+   * ボックスをコンテナへ(再)マウントする。
+   * Cytoscape の `cy.destroy()` はコンテナの全子要素を除去するため（グラフ再描画のたびに発生）、
+   * 同じコンテナを共有する本ボックスも一緒に切り離される。再描画後に呼び出して復帰させる。
+   * 既にマウント済みなら no-op（同一ノードの appendChild は移動のみ）。表示/入力状態は保持される。
+   */
+  mount(): void;
 }
 
 /**
@@ -138,5 +145,9 @@ export function createSearchBox(container: HTMLElement, handlers: SearchBoxHandl
     count.textContent = `${current} / ${total}`;
   }
 
-  return { open, close, isOpen, setCount };
+  function mount(): void {
+    container.appendChild(box);
+  }
+
+  return { open, close, isOpen, setCount, mount };
 }

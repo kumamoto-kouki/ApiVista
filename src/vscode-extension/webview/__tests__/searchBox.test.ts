@@ -81,4 +81,19 @@ describe("createSearchBox", () => {
     expect(box.isOpen()).toBe(false);
     expect(input().value).toBe("");
   });
+
+  it("コンテナがクリアされた後でも mount で復帰し、表示状態を保持する", () => {
+    box = createSearchBox(container, makeHandlers());
+    box.open();
+    expect(box.isOpen()).toBe(true);
+
+    // Cytoscape の cy.destroy() がコンテナの全子要素を除去する状況を再現
+    container.replaceChildren();
+    expect(container.querySelector('[role="search"]')).toBeNull();
+
+    box.mount();
+    expect(container.querySelector('[role="search"]')).not.toBeNull();
+    // 同一ノードの再マウントなので open 状態は保持される
+    expect(box.isOpen()).toBe(true);
+  });
 });
