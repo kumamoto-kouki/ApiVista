@@ -20,7 +20,7 @@ import type { RouteDefinition } from "../backend-analysis/models.js";
 import type { ApiCall } from "../frontend-analysis/models.js";
 import { namespaceId } from "./ids.js";
 import type { ApiCallRef, MatchKind, RouteLinkage, RouteRef, Warning } from "./models.js";
-import { matchKind, methodEquals } from "./pathMatch.js";
+import { canonicalize, matchKindSegs } from "./pathMatch.js";
 
 export interface MatchResult {
   linkages: RouteLinkage[];
@@ -60,14 +60,21 @@ export function matchRoutes(
   const unmatchedApiCalls: ApiCallRef[] = [];
   const matchedRouteIndices = new Set<number>();
 
-  for (const apiCall of apiCalls) {
+  // route/apiCall を1回だけ正準化・メソッド正規化しておき、N×M ループでの
+  // 再計算（canonicalize / toUpperCase の重複）を回避する。出力は不変。
+  const routeSegs = routes.map((r) => canonicalize(r.path));
+  const routeMethodUpper = routes.map((r) => r.method.toUpperCase());
+  const apiSegs = apiCalls.map((c) => canonicalize(c.urlPattern));
+  const apiMethodUpper = apiCalls.map((c) => c.method.toUpperCase());
+
+  apiCalls.forEach((apiCall, apiIndex) => {
     const exactIndices: number[] = [];
     const suffixIndices: number[] = [];
-    routes.forEach((route, index) => {
-      if (!methodEquals(route.method, apiCall.method)) {
+    routes.forEach((_route, index) => {
+      if (routeMethodUpper[index] !== apiMethodUpper[apiIndex]) {
         return;
       }
-      const kind = matchKind(route.path, apiCall.urlPattern);
+      const kind = matchKindSegs(routeSegs[index], apiSegs[apiIndex]);
       if (kind === "exact") {
         exactIndices.push(index);
       } else if (kind === "suffix") {
@@ -85,7 +92,7 @@ export function matchRoutes(
     if (chosenIndices.length === 0) {
       unmatchedApiCalls.push(toApiCallRef(apiCall));
       diagnostics.push({ target: apiCall.urlPattern, reason: "unmatched-api-call" });
-      continue;
+      return;
     }
 
     if (chosenIndices.length > 1) {
@@ -100,7 +107,7 @@ export function matchRoutes(
         matchKind: chosenKind,
       });
     }
-  }
+  });
 
   const unmatchedRoutes: RouteRef[] = [];
   routes.forEach((route, index) => {

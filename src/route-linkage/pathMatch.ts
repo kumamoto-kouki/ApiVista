@@ -40,16 +40,16 @@ function segEq(x: string, y: string): boolean {
 }
 
 /**
- * `routePath`(backend)と `apiUrlPattern`(frontend)の一致種別を判定する。
+ * 正準化済みセグメント配列から一致種別を判定する(`matchKind` の本体)。
+ *
+ * `matchRoutes` のように同じパスを多数回照合する呼び出し元は、`canonicalize` を
+ * 事前に1回だけ実行して本関数へ渡すことで、N×M 回の再正準化を回避できる。
  *
  * 全長一致なら exact、長さが異なる場合のみ末尾一致(リテラル必須ガード付き)で
  * suffix を判定する。同長で不一致の場合は null(suffix は非対称な末尾関係のため
  * 同長ケースに適用しない)。
  */
-export function matchKind(routePath: string, apiUrlPattern: string): MatchKind | null {
-  const routeSegs = canonicalize(routePath);
-  const apiSegs = canonicalize(apiUrlPattern);
-
+export function matchKindSegs(routeSegs: string[], apiSegs: string[]): MatchKind | null {
   if (routeSegs.length === apiSegs.length) {
     return routeSegs.every((seg, i) => segEq(seg, apiSegs[i])) ? "exact" : null;
   }
@@ -74,4 +74,14 @@ export function matchKind(routePath: string, apiUrlPattern: string): MatchKind |
   }
 
   return hasLiteralMatch ? "suffix" : null;
+}
+
+/**
+ * `routePath`(backend)と `apiUrlPattern`(frontend)の一致種別を判定する。
+ *
+ * 両パスを `canonicalize` してから `matchKindSegs` に委譲する薄いラッパ。
+ * 単発照合や既存の公開APIとして利用する。
+ */
+export function matchKind(routePath: string, apiUrlPattern: string): MatchKind | null {
+  return matchKindSegs(canonicalize(routePath), canonicalize(apiUrlPattern));
 }

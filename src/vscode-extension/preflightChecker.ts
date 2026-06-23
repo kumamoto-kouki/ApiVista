@@ -10,6 +10,7 @@
  * 3. プロジェクト設定が FastAPI 最低要件 (Python 3.8) を満たす（設定ファイルがある場合のみ）
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
 const PYTHON_MIN_MAJOR = 3;
@@ -38,24 +39,27 @@ function assertWasmFiles(wasmDir: string): void {
 
 /** backendRoot に .py ファイルが存在するか確認する（ルート + 1段深いサブディレクトリ）。 */
 function assertPythonFiles(backendRoot: string): void {
-  const hasPy = (dir: string): boolean => {
+  // ルートの listing は1回だけ取得し、直下の .py 判定とサブディレクトリ列挙の両方に再利用する。
+  let rootEntries: Dirent[];
+  try {
+    rootEntries = readdirSync(backendRoot, { withFileTypes: true });
+  } catch {
+    // ルートを読めない（アクセス権限等）場合は .py 不在と同様に扱う。
+    rootEntries = [];
+  }
+
+  if (rootEntries.some((e) => e.isFile() && e.name.endsWith(".py"))) return;
+
+  for (const entry of rootEntries) {
+    if (!entry.isDirectory()) continue;
     try {
-      return readdirSync(dir, { withFileTypes: true }).some(
+      const hasPy = readdirSync(join(backendRoot, entry.name), { withFileTypes: true }).some(
         (e) => e.isFile() && e.name.endsWith(".py"),
       );
+      if (hasPy) return;
     } catch {
-      return false;
+      // サブディレクトリ読み取り失敗は無視して次へ。
     }
-  };
-
-  if (hasPy(backendRoot)) return;
-
-  try {
-    for (const entry of readdirSync(backendRoot, { withFileTypes: true })) {
-      if (entry.isDirectory() && hasPy(join(backendRoot, entry.name))) return;
-    }
-  } catch {
-    // readdirSync 失敗はアクセス権限問題などの可能性。.py 不在と同様に扱う。
   }
 
   throw new PreflightError(
