@@ -30,6 +30,8 @@ export interface ModuleMap {
   pathToModule: Map<string, string>;
   /** モジュール → 公開トップレベル名（class/def/import束縛名）。 */
   exportedNames: Map<string, Set<string>>;
+  /** Pass1 で再利用するための Parse キャッシュ。fileId → { source, tree }。 */
+  parsedFiles: Map<string, { source: string; tree: Tree }>;
 }
 
 /**
@@ -174,6 +176,7 @@ export async function buildModuleMap(
   const moduleToPath = new Map<string, string>();
   const pathToModule = new Map<string, string>();
   const exportedNames = new Map<string, Set<string>>();
+  const parsedFiles = new Map<string, { source: string; tree: Tree }>();
 
   const files = await listPythonFiles(backendRoot);
   for (const filePath of files) {
@@ -193,9 +196,10 @@ export async function buildModuleMap(
     moduleToPath.set(moduleName, fileId);
     pathToModule.set(fileId, moduleName);
     exportedNames.set(moduleName, collectExportedNames(tree));
+    parsedFiles.set(fileId, { source, tree });
   }
 
-  return { moduleToPath, pathToModule, exportedNames };
+  return { moduleToPath, pathToModule, exportedNames, parsedFiles };
 }
 
 /**

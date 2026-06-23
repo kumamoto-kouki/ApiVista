@@ -35,13 +35,18 @@
 import * as vscode from "vscode";
 
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
+import { copyFunctionWithLinked } from "./functionCopier.js";
 import * as graphPanel from "./graphPanel.js";
 import { createReanalysisWatcher } from "./reanalysisWatcher.js";
 import type { ReanalysisWatcher } from "./reanalysisWatcher.js";
+import { loadCachedResult, saveCachedResult } from "./resultCache.js";
 import { validate, ScopeError } from "./workspaceScanner.js";
 
 /** 拡張がdeactivateされる際の安全網として破棄するため、現在アクティブなwatcherを保持する。 */
 let activeWatcher: ReanalysisWatcher | undefined;
+
+/** 解析ログを出力する OutputChannel。activate 時に生成し subscriptions で管理する。 */
+let outputChannel: vscode.OutputChannel | undefined;
 
 /** `ScopeError`/`AnalysisError`を`showErrorMessage`で表示する共通ハンドラ。 */
 function reportError(error: unknown): void {
@@ -56,6 +61,7 @@ function reportError(error: unknown): void {
 async function runAnalysis(
   wasmDir: string,
   progressTitle: string,
+  opts?: { focalFile?: string },
 ): Promise<{
   backendRoot: string;
   frontendRoot: string;
@@ -70,31 +76,66 @@ async function runAnalysis(
   }
 
   const { backendRoot, frontendRoot } = scanned;
+  const channel = outputChannel;
+
+  const timestamp = new Date().toLocaleTimeString();
+  channel?.appendLine(`\n[${timestamp}] ${progressTitle}`);
 
   let output;
   try {
     output = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: progressTitle },
-      async () => analyze(backendRoot, frontendRoot, wasmDir),
+      { location: vscode.ProgressLocation.Notification, title: progressTitle, cancellable: true },
+      async (_progress, token) => {
+        const checkCancelled = () => {
+          if (token.isCancellationRequested) throw new vscode.CancellationError();
+        };
+        const onProgress = (msg: string) => {
+          channel?.appendLine(`  ${msg}`);
+        };
+        return analyze(backendRoot, frontendRoot, wasmDir, {
+          onProgress,
+          checkCancelled,
+          focalFile: opts?.focalFile,
+        });
+      },
     );
   } catch (error) {
+    if (error instanceof vscode.CancellationError) {
+      channel?.appendLine("  キャンセルされました。");
+      return null;
+    }
     reportError(error);
+    if (channel && (error instanceof AnalysisError || error instanceof Error)) {
+      channel.appendLine(`  エラー: ${(error as Error).message}`);
+      channel.show(true);
+    }
     return null;
   }
 
   return { backendRoot, frontendRoot, output };
 }
 
-async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): Promise<void> {
-  const result = await runAnalysis(wasmDir, "ApiVista: 解析中...");
+/** キャッシュ表示後にバックグラウンドで再解析し、パネルとキャッシュを更新する。 */
+async function reanalyzeInBackground(
+  wasmDir: string,
+  storageDir: string,
+  context: vscode.ExtensionContext,
+  backendRoot: string,
+  frontendRoot: string,
+): Promise<void> {
+  const result = await runAnalysis(wasmDir, "ApiVista: バックグラウンド更新中...");
   if (result === null) return;
+  graphPanel.postLinkageUpdate(result.output);
+  void saveCachedResult(storageDir, result.output);
+}
 
-  const { backendRoot, frontendRoot, output } = result;
-
-  // `onDidDispose`コールバックは新規パネル生成時のみ発火するため、その時点で初めて
-  // `createReanalysisWatcher()`が返した同一インスタンスを束縛できればよい。`showOrReveal`が
-  // 既存パネルをreveal()しただけ(false)の場合はこのコールバック自体が発火しないため、
-  // `watcherRef.current`への代入は新規パネル生成時にのみ意味を持つ。
+/** `showGraph` のパネル生成 + watcher 起動の共通ロジック。 */
+function openPanelAndStartWatcher(
+  context: vscode.ExtensionContext,
+  output: Awaited<ReturnType<typeof analyze>>,
+  backendRoot: string,
+  frontendRoot: string,
+): void {
   const watcherRef: { current: ReanalysisWatcher | undefined } = { current: undefined };
   const isNewPanel = graphPanel.showOrReveal({ extensionUri: context.extensionUri }, output, () => {
     watcherRef.current?.dispose();
@@ -105,7 +146,6 @@ async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): 
   if (!isNewPanel) {
     return;
   }
-
   const newWatcher = createReanalysisWatcher();
   watcherRef.current = newWatcher;
   newWatcher.start(backendRoot, frontendRoot, (newOutput) => {
@@ -114,22 +154,122 @@ async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): 
   activeWatcher = newWatcher;
 }
 
-async function runReanalyze(wasmDir: string): Promise<void> {
+async function runShowGraph(context: vscode.ExtensionContext, wasmDir: string): Promise<void> {
+  const storageDir = context.storageUri?.fsPath;
+
+  // キャッシュ確認は validate() 不要。storageDir から直接読み込む。
+  if (storageDir) {
+    const cached = await loadCachedResult(storageDir);
+    if (cached) {
+      // キャッシュあり: validate して watcher 用 roots を取得してから即時表示。
+      let scanned: { backendRoot: string; frontendRoot: string };
+      try {
+        scanned = validate();
+      } catch (error) {
+        reportError(error);
+        return;
+      }
+      const { backendRoot, frontendRoot } = scanned;
+      openPanelAndStartWatcher(context, cached, backendRoot, frontendRoot);
+      void reanalyzeInBackground(wasmDir, storageDir, context, backendRoot, frontendRoot);
+      return;
+    }
+  }
+
+  // キャッシュなし → 通常フロー。runAnalysis 内で validate() を呼ぶ。
+  const result = await runAnalysis(wasmDir, "ApiVista: 解析中...");
+  if (result === null) return;
+
+  if (storageDir) {
+    void saveCachedResult(storageDir, result.output);
+  }
+  openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
+}
+
+async function runReanalyze(wasmDir: string, storageDir?: string): Promise<void> {
   const result = await runAnalysis(wasmDir, "ApiVista: 再解析中...");
   if (result === null) return;
   graphPanel.postLinkageUpdate(result.output);
+  if (storageDir) {
+    void saveCachedResult(storageDir, result.output);
+  }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
   const wasmDir = vscode.Uri.joinPath(context.extensionUri, "media", "wasm").fsPath;
+  const storageDir = context.storageUri?.fsPath;
+
+  outputChannel = vscode.window.createOutputChannel("ApiVista");
+  context.subscriptions.push(outputChannel);
+
   const showGraphDisposable = vscode.commands.registerCommand("apivista.showGraph", () =>
     runShowGraph(context, wasmDir),
   );
   const reanalyzeDisposable = vscode.commands.registerCommand("apivista.reanalyze", () =>
-    runReanalyze(wasmDir),
+    runReanalyze(wasmDir, storageDir),
+  );
+  const analyzeActiveFileDisposable = vscode.commands.registerCommand(
+    "apivista.analyzeActiveFile",
+    async (uri?: vscode.Uri) => {
+      // エクスプローラー右クリック時は uri が渡される。エディタ右クリック/コマンドパレットは undefined。
+      const focalFile = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+      const result = await runAnalysis(wasmDir, "ApiVista: スポット解析中...", { focalFile });
+      if (result === null) return;
+      if (storageDir) void saveCachedResult(storageDir, result.output);
+      openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
+    },
   );
 
-  context.subscriptions.push(showGraphDisposable, reanalyzeDisposable);
+  const copyFunctionDisposable = vscode.commands.registerCommand(
+    "apivista.copyFunctionWithLinked",
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      if (!storageDir) {
+        void vscode.window.showErrorMessage(
+          "ApiVista: 先に「Show Route Linkage Graph」で解析を実行してください。",
+        );
+        return;
+      }
+      const cached = await loadCachedResult(storageDir);
+      if (!cached) {
+        void vscode.window.showErrorMessage(
+          "ApiVista: 解析結果がキャッシュされていません。先に解析を実行してください。",
+        );
+        return;
+      }
+      let scanned: { backendRoot: string; frontendRoot: string };
+      try {
+        scanned = validate();
+      } catch (error) {
+        reportError(error);
+        return;
+      }
+      const count = await copyFunctionWithLinked(
+        editor.document,
+        editor.selection.active,
+        cached,
+        scanned.backendRoot,
+        scanned.frontendRoot,
+      );
+      if (count === 0) {
+        void vscode.window.showInformationMessage(
+          "ApiVista: カーソルを関数内に置いてください（連携関数が見つかりませんでした）。",
+        );
+      } else {
+        void vscode.window.showInformationMessage(
+          `ApiVista: ${count}個の関数をクリップボードにコピーしました。`,
+        );
+      }
+    },
+  );
+
+  context.subscriptions.push(
+    showGraphDisposable,
+    reanalyzeDisposable,
+    analyzeActiveFileDisposable,
+    copyFunctionDisposable,
+  );
 }
 
 export function deactivate(): void {

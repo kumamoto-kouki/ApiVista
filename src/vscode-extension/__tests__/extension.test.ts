@@ -15,6 +15,7 @@ import type { LinkageOutput } from "../../route-linkage/index.js";
 interface FakeExtensionContext {
   subscriptions: Array<{ dispose: () => void }>;
   extensionUri: { fsPath: string };
+  storageUri?: { fsPath: string };
 }
 
 const registerCommandMock = vi.fn();
@@ -47,6 +48,19 @@ class FakeAnalysisError extends Error {
   }
 }
 
+const createOutputChannelMock = vi.fn(() => ({
+  appendLine: vi.fn(),
+  show: vi.fn(),
+  dispose: vi.fn(),
+}));
+
+class FakeCancellationError extends Error {
+  constructor() {
+    super("Cancelled");
+    this.name = "CancellationError";
+  }
+}
+
 vi.mock("vscode", () => ({
   Uri: {
     joinPath: vi.fn((_base: { fsPath: string }, ...parts: string[]) => ({
@@ -59,8 +73,10 @@ vi.mock("vscode", () => ({
   window: {
     showErrorMessage: showErrorMessageMock,
     withProgress: withProgressMock,
+    createOutputChannel: createOutputChannelMock,
   },
   ProgressLocation: { Notification: 15 },
+  CancellationError: FakeCancellationError,
 }));
 
 vi.mock("../workspaceScanner.js", () => ({
@@ -82,6 +98,14 @@ vi.mock("../reanalysisWatcher.js", () => ({
   createReanalysisWatcher: (...args: []) => createReanalysisWatcherMock(...args),
 }));
 
+const loadCachedResultMock = vi.fn();
+const saveCachedResultMock = vi.fn();
+
+vi.mock("../resultCache.js", () => ({
+  loadCachedResult: (...args: unknown[]) => loadCachedResultMock(...args),
+  saveCachedResult: (...args: unknown[]) => saveCachedResultMock(...args),
+}));
+
 const BACKEND_ROOT = "/workspace/backend";
 const FRONTEND_ROOT = "/workspace/frontend";
 
@@ -101,6 +125,7 @@ function makeFakeContext(): FakeExtensionContext {
   return {
     subscriptions: [],
     extensionUri: { fsPath: "/ext" },
+    storageUri: { fsPath: "/ext-storage" },
   };
 }
 
@@ -114,8 +139,10 @@ function makeFakeWatcher(): { start: ReturnType<typeof vi.fn>; dispose: ReturnTy
 /** `withProgress`を即時に`task`を実行してその結果を返すフェイク実装に設定する。 */
 function makeWithProgressRunTask(): void {
   withProgressMock.mockImplementation(
-    async (_options: unknown, task: (...args: unknown[]) => Promise<unknown>): Promise<unknown> =>
-      task(),
+    async (
+      _options: unknown,
+      task: (progress: unknown, token: { isCancellationRequested: boolean }) => Promise<unknown>,
+    ): Promise<unknown> => task({}, { isCancellationRequested: false }),
   );
 }
 
@@ -141,6 +168,16 @@ describe("extension.activate", () => {
     showOrRevealMock.mockReturnValue(true);
     postLinkageUpdateMock.mockReset();
     createReanalysisWatcherMock.mockReset();
+    createOutputChannelMock.mockReset();
+    createOutputChannelMock.mockReturnValue({
+      appendLine: vi.fn(),
+      show: vi.fn(),
+      dispose: vi.fn(),
+    });
+    loadCachedResultMock.mockReset();
+    loadCachedResultMock.mockResolvedValue(undefined); // デフォルトはキャッシュなし
+    saveCachedResultMock.mockReset();
+    saveCachedResultMock.mockResolvedValue(undefined);
     makeWithProgressRunTask();
   });
 
@@ -149,23 +186,31 @@ describe("extension.activate", () => {
     vi.resetModules();
   });
 
-  it("apivista.showGraphとapivista.reanalyzeの2コマンドを登録し、両方のdisposableをcontext.subscriptionsへpushする", async () => {
+  it("4コマンド（showGraph/reanalyze/analyzeActiveFile/copyFunctionWithLinked）を登録し、すべてのdisposableをcontext.subscriptionsへpushする", async () => {
     const disposableShowGraph = { dispose: vi.fn() };
     const disposableReanalyze = { dispose: vi.fn() };
+    const disposableAnalyzeActiveFile = { dispose: vi.fn() };
+    const disposableCopyFunction = { dispose: vi.fn() };
     registerCommandMock
       .mockReturnValueOnce(disposableShowGraph)
-      .mockReturnValueOnce(disposableReanalyze);
+      .mockReturnValueOnce(disposableReanalyze)
+      .mockReturnValueOnce(disposableAnalyzeActiveFile)
+      .mockReturnValueOnce(disposableCopyFunction);
 
     const { activate } = await import("../extension.js");
     const context = makeFakeContext();
 
     activate(context as never);
 
-    expect(registerCommandMock).toHaveBeenCalledTimes(2);
+    expect(registerCommandMock).toHaveBeenCalledTimes(4);
     expect(registerCommandMock.mock.calls[0][0]).toBe("apivista.showGraph");
     expect(registerCommandMock.mock.calls[1][0]).toBe("apivista.reanalyze");
+    expect(registerCommandMock.mock.calls[2][0]).toBe("apivista.analyzeActiveFile");
+    expect(registerCommandMock.mock.calls[3][0]).toBe("apivista.copyFunctionWithLinked");
     expect(context.subscriptions).toContain(disposableShowGraph);
     expect(context.subscriptions).toContain(disposableReanalyze);
+    expect(context.subscriptions).toContain(disposableAnalyzeActiveFile);
+    expect(context.subscriptions).toContain(disposableCopyFunction);
   });
 
   it("showGraph実行時、validate→analyze→showOrRevealの順に呼び出し、validateが返したrootsをanalyzeに渡す", async () => {
@@ -183,7 +228,12 @@ describe("extension.activate", () => {
     await handler();
 
     expect(validateMock).toHaveBeenCalledTimes(1);
-    expect(analyzeMock).toHaveBeenCalledWith(BACKEND_ROOT, FRONTEND_ROOT, expect.any(String));
+    expect(analyzeMock).toHaveBeenCalledWith(
+      BACKEND_ROOT,
+      FRONTEND_ROOT,
+      expect.any(String),
+      expect.any(Object),
+    );
     expect(showOrRevealMock).toHaveBeenCalledTimes(1);
 
     const validateOrder = validateMock.mock.invocationCallOrder[0];
@@ -262,7 +312,12 @@ describe("extension.activate", () => {
     await handler();
 
     expect(validateMock).toHaveBeenCalledTimes(1);
-    expect(analyzeMock).toHaveBeenCalledWith(BACKEND_ROOT, FRONTEND_ROOT, expect.any(String));
+    expect(analyzeMock).toHaveBeenCalledWith(
+      BACKEND_ROOT,
+      FRONTEND_ROOT,
+      expect.any(String),
+      expect.any(Object),
+    );
     expect(postLinkageUpdateMock).toHaveBeenCalledWith(output);
     expect(showOrRevealMock).not.toHaveBeenCalled();
   });

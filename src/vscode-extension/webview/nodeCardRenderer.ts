@@ -83,9 +83,10 @@ export function createNodeCard(
   header.appendChild(typeName);
   header.appendChild(connBadge);
 
-  // メインラベル
+  // メインラベル（sourceLocation があればコードジャンプリンクとして機能する）
   const labelEl = document.createElement("div");
   labelEl.textContent = node.label;
+  const isJumpable = !!node.sourceLocation;
   labelEl.style.cssText = [
     "font-size:12px",
     "font-weight:600",
@@ -95,15 +96,20 @@ export function createNodeCard(
     "text-overflow:ellipsis",
     "white-space:nowrap",
     "line-height:1.4",
+    ...(isJumpable ? ["cursor:pointer"] : []),
   ].join(";");
+  if (isJumpable) {
+    labelEl.dataset.codeLink = "true";
+  }
 
   card.appendChild(header);
   card.appendChild(labelEl);
 
-  // ソース位置
+  // ソース位置（コードジャンプリンク）
   if (node.sourceLocation) {
     const source = document.createElement("div");
     source.textContent = `↗ ${node.sourceLocation.file}:${node.sourceLocation.line}`;
+    source.dataset.codeLink = "true";
     source.style.cssText = [
       "font-size:10px",
       `color:${theme.textSub}`,
@@ -113,6 +119,7 @@ export function createNodeCard(
       "white-space:nowrap",
       "line-height:1.4",
       "margin-top:2px",
+      "cursor:pointer",
     ].join(";");
     card.appendChild(source);
   }

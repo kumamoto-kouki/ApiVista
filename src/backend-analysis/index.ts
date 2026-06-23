@@ -12,14 +12,11 @@
  * - 決定性: ファイル走査は fileId 昇順で固定する（同一入力 → 同一出力）。
  */
 import { statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 
 import { assembleOutput } from "./assemble.js";
 import { extractFile } from "./extractFile.js";
 import type { FileExtractionResult } from "./extractFile.js";
 import { buildModuleMap } from "./moduleMap.js";
-import { getPythonParser } from "./parser.js";
 import { buildCallGraph, deriveFileGraph } from "./resolver/callGraph.js";
 import { resolveRoutePaths } from "./resolver/routePaths.js";
 import { resolveSchemaRefs } from "./resolver/schemaRefs.js";
@@ -51,6 +48,16 @@ export interface AnalyzeOptions {
    * 未指定時は Node 解決（node_modules）。
    */
   wasmDir?: string;
+  /** 進捗メッセージのコールバック。各フェーズ完了時に呼び出す。 */
+  onProgress?: (msg: string) => void;
+  /** キャンセル確認。キャンセルされた場合 throw する。vscode 依存なし（単なる () => void）。 */
+  checkCancelled?: () => void;
+  /**
+   * スポット解析用フォーカルファイル ID（backendRoot 相対 POSIX パス。例: "routers/posts.py"）。
+   * 指定時は Pass1 をフォーカルファイルと同一ディレクトリ + ルートレベルのファイルに限定する。
+   * Pass0（モジュールマップ）は全ファイルを処理し import 解決を保証する。
+   */
+  focalFileId?: string;
 }
 
 /**
@@ -83,37 +90,48 @@ export async function analyzeBackend(
 ): Promise<AnalysisOutput> {
   assertBackendRoot(backendRoot);
 
+  const { onProgress, checkCancelled } = options ?? {};
   const collector = new WarningCollector();
 
   // Pass0: モジュールマップ（構文エラーファイルは skip + 警告記録済み）。
   const map = await buildModuleMap(backendRoot, collector, options?.wasmDir);
+  onProgress?.(`バックエンド Pass0 完了: ${map.pathToModule.size} ファイルをスキャン`);
+  checkCancelled?.();
 
-  // Pass1: 各パース可能ファイル（map に載ったもの）を抽出 + symbolTable 構築。
-  // broken.py は map に不在のためここでは再パースされず、parse-error の二重記録は起きない。
-  const parser = await getPythonParser(options?.wasmDir);
+  // Pass1: 各パース可能ファイルを抽出 + symbolTable 構築。
+  // Pass0 が生成した parsedFiles キャッシュを再利用することで readFile/parse を省略する。
   const perFile = new Map<string, FileExtractionResult>();
   const symbolTables = new Map<string, Map<string, Binding>>();
 
-  // 決定性のため fileId 昇順で処理する。
-  const fileIds = [...map.pathToModule.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  // 決定性のため fileId 昇順で処理する。focalFileId が指定された場合は Pass1 を限定する。
+  const allFileIds = [...map.pathToModule.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const focalFileId = options?.focalFileId;
+  const fileIds = focalFileId
+    ? allFileIds.filter((id) => {
+        const focalDir = focalFileId.includes("/")
+          ? focalFileId.slice(0, focalFileId.lastIndexOf("/"))
+          : "";
+        return focalDir === ""
+          ? !id.includes("/")
+          : id.startsWith(focalDir + "/") || !id.includes("/");
+      })
+    : allFileIds;
 
   for (const fileId of fileIds) {
-    const source = await readFile(join(backendRoot, fileId), "utf8");
-    const tree = parser.parse(source);
-    if (tree === null) {
-      // map に載っているが再パースで null（理論上発生しないが防御的に記録）。
-      collector.recordParseError(fileId);
-      continue;
-    }
+    const cached = map.parsedFiles.get(fileId);
+    if (!cached) continue; // fileIds は map 由来なので理論上到達しない
+    const { tree } = cached;
     perFile.set(fileId, extractFile(fileId, tree, collector));
     symbolTables.set(fileId, buildSymbolTable(tree, fileId));
   }
+  checkCancelled?.();
 
   // 起点ハンドラ候補（全ファイルの routes を平坦化）。
   const entryHandlers: RouteCandidate[] = [];
   for (const file of perFile.values()) {
     entryHandlers.push(...file.routes);
   }
+  onProgress?.(`バックエンド Pass1 完了: ${entryHandlers.length} ルート候補を抽出`);
 
   // Pass2a: ルートパス解決。
   const routes = resolveRoutePaths(perFile, map, collector, symbolTables);
@@ -124,6 +142,7 @@ export async function analyzeBackend(
 
   // Pass2c: クロスファイルのスキーマ参照解決。
   const schemaRefsByHandler = resolveSchemaRefs(perFile, map, collector);
+  onProgress?.(`バックエンド Pass2 完了: ${routes.length} ルートを解決`);
 
   // Assembler: 単一の AnalysisOutput に統合。
   return assembleOutput(routes, schemaRefsByHandler, functions, files, collector.warnings);

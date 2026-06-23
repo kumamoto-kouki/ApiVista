@@ -21,8 +21,37 @@
       {
         "command": "apivista.reanalyze",
         "title": "ApiVista: Reanalyze Workspace"
+      },
+      {
+        "command": "apivista.analyzeActiveFile",
+        "title": "ApiVista: Analyze This File's Routes"
+      },
+      {
+        "command": "apivista.copyFunctionWithLinked",
+        "title": "ApiVista: Copy Function with Linked"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "apivista.analyzeActiveFile",
+          "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
+          "group": "apivista@1"
+        },
+        {
+          "command": "apivista.copyFunctionWithLinked",
+          "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
+          "group": "apivista@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "apivista.analyzeActiveFile",
+          "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
+          "group": "apivista@1"
+        }
+      ]
+    }
   },
   "scripts": {
     "copy-wasm": "mkdir -p media/wasm && cp node_modules/web-tree-sitter/tree-sitter.wasm media/wasm/ && cp node_modules/tree-sitter-wasms/out/tree-sitter-python.wasm media/wasm/",

@@ -211,27 +211,18 @@ describe("webview/main.ts", () => {
     expect(elementIds.some((id) => id.startsWith("linkage:"))).toBe(true);
   });
 
-  it("posts a nodeClick message with the tapped node's sourceLocation", async () => {
+  it("posts a nodeClick message when a [data-code-link] element is clicked", async () => {
     await import("../main.js");
 
-    const theRoute = route();
     const output = buildOutput({
-      linkages: [{ route: theRoute, apiCall: apiCall(), matchKind: "exact" }],
+      linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }],
     });
     dispatchLinkageData(output);
 
-    const tapHandler = getTapHandler();
-    tapHandler({
-      target: {
-        data: () => ({
-          id: "route:GET:/api/users/{id}:backend/routes/users.ts:10",
-          kind: "route",
-          label: "GET /api/users/{id}",
-          unmatched: false,
-          sourceLocation: { file: "backend/routes/users.ts", line: 10 },
-        }),
-      },
-    });
+    postMessageMock.mockClear();
+    const codeLink = document.querySelector<HTMLElement>("[data-code-link]");
+    expect(codeLink).not.toBeNull();
+    codeLink!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(postMessageMock).toHaveBeenCalledWith({
       type: "nodeClick",
@@ -239,7 +230,7 @@ describe("webview/main.ts", () => {
     });
   });
 
-  it("does not post nodeClick when the tapped node has no sourceLocation", async () => {
+  it("does not post nodeClick when Cytoscape node tap fires (code jump is [data-code-link] only)", async () => {
     await import("../main.js");
 
     const output = buildOutput({
@@ -252,10 +243,11 @@ describe("webview/main.ts", () => {
     tapHandler({
       target: {
         data: () => ({
-          id: "file:f1",
-          kind: "file",
-          label: "f1",
+          id: "route:GET:/api/users/{id}:backend/routes/users.ts:10",
+          kind: "route",
+          label: "GET /api/users/{id}",
           unmatched: false,
+          sourceLocation: { file: "backend/routes/users.ts", line: 10 },
         }),
       },
     });

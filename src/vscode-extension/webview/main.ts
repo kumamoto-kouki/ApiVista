@@ -425,16 +425,28 @@ function renderNodeCards(
     const card = createNodeCard(node, connCount.get(node.id) ?? 0, warnings, theme);
     card.dataset.depth = String(depths.get(node.id) ?? 0);
 
-    // クリック: ソースへジャンプ
+    // クリック: カードをハイライト（コードジャンプは [data-code-link] 要素のみ）
     card.addEventListener("click", () => {
       for (const { el } of nodeCardEls) {
         el.style.boxShadow = "";
       }
       card.style.boxShadow = `0 0 0 2px ${theme.selected}`;
-      if (node.sourceLocation) {
-        vscodeApi.postMessage({ type: "nodeClick", payload: node.sourceLocation });
-      }
     });
+
+    // コードジャンプリンク: ホバーで下線、クリックでコードジャンプ
+    for (const link of card.querySelectorAll<HTMLElement>("[data-code-link]")) {
+      link.addEventListener("mouseenter", () => {
+        link.style.textDecoration = "underline";
+      });
+      link.addEventListener("mouseleave", () => {
+        link.style.textDecoration = "";
+      });
+      link.addEventListener("click", () => {
+        if (node.sourceLocation) {
+          vscodeApi.postMessage({ type: "nodeClick", payload: node.sourceLocation });
+        }
+      });
+    }
 
     // ホバー: 非隣接ノードを減光
     card.addEventListener("mouseenter", () => {
@@ -570,9 +582,8 @@ function toElementDefinitions(
   return [...nodeElements, ...edgeElements];
 }
 
-function handleNodeTap(node: GraphNode): void {
-  if (!node.sourceLocation) return;
-  vscodeApi.postMessage({ type: "nodeClick", payload: node.sourceLocation });
+function handleNodeTap(_node: GraphNode): void {
+  // Cytoscape fallback tap: カード上のクリックは [data-code-link] 要素が処理するため何もしない
 }
 
 function renderGraph(): void {

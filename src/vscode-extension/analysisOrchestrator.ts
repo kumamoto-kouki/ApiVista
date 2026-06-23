@@ -10,6 +10,8 @@
  * - 3specの`warnings`は`linkRoutes`の出力(`LinkageOutput.warnings`)に既に集約されているため、
  *   本コンポーネントは追加の警告処理を行わない。
  */
+import { relative } from "node:path";
+
 import { analyzeBackend } from "../backend-analysis/index.js";
 import { analyzeFrontend } from "../frontend-analysis/index.js";
 import { linkRoutes } from "../route-linkage/index.js";
@@ -29,6 +31,19 @@ export class AnalysisError extends Error {
   }
 }
 
+/** `analyze` に渡すオプション。 */
+export interface AnalyzeOrchestratorOptions {
+  /** 進捗メッセージのコールバック（OutputChannel + withProgress.report の両方に流す）。 */
+  onProgress?: (msg: string) => void;
+  /** キャンセル確認。キャンセルされた場合 throw する。 */
+  checkCancelled?: () => void;
+  /**
+   * スポット解析用フォーカルファイルの絶対パス。
+   * バックエンド/フロントエンド両ルートに対して相対 fileId に変換して各解析に渡す。
+   */
+  focalFile?: string;
+}
+
 /**
  * `backendRoot`/`frontendRoot`を解析し、単一の`LinkageOutput`を返す。
  *
@@ -40,11 +55,35 @@ export async function analyze(
   backendRoot: string,
   frontendRoot: string,
   wasmDir?: string,
+  options?: AnalyzeOrchestratorOptions,
 ): Promise<LinkageOutput> {
+  const { onProgress, checkCancelled, focalFile } = options ?? {};
+
+  // focalFile の絶対パスを各 root 相対の fileId に変換する（POSIX スラッシュに正規化）。
+  const beFileId = focalFile?.startsWith(backendRoot + "/")
+    ? relative(backendRoot, focalFile).replace(/\\/g, "/")
+    : undefined;
+  const feFileId = focalFile?.startsWith(frontendRoot + "/")
+    ? relative(frontendRoot, focalFile).replace(/\\/g, "/")
+    : undefined;
+
   try {
-    const backendOutput = await analyzeBackend(backendRoot, { wasmDir });
+    onProgress?.("バックエンド解析を開始しています...");
+    const backendOutput = await analyzeBackend(backendRoot, {
+      wasmDir,
+      onProgress,
+      checkCancelled,
+      focalFileId: beFileId,
+    });
+    checkCancelled?.();
+    onProgress?.("フロントエンド解析を開始しています...");
     const frontendOutput = analyzeFrontend(frontendRoot);
-    return linkRoutes(backendOutput, frontendOutput);
+    onProgress?.("ルート連携を解析しています...");
+    const result = linkRoutes(backendOutput, frontendOutput);
+    onProgress?.(
+      `解析完了: ${result.linkages.length}件連携, ${result.unmatchedRoutes.length + result.unmatchedApiCalls.length}件未連携`,
+    );
+    return result;
   } catch (error) {
     throw new AnalysisError(error, "ApiVistaの解析処理に失敗しました。");
   }
