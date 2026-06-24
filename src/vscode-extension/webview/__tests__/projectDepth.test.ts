@@ -261,6 +261,42 @@ describe("projectDepth", () => {
       assertReferentialIntegrity(nodes, edges);
     });
 
+    it("anchors model/table nodes to the handler's file node (file -> model -> table)", () => {
+      const output = buildOutput({
+        files: [file()], // backend:file-users
+        functions: [fn()], // backend:fn-getUser, file=backend:file-users
+        linkages: [
+          {
+            route: route({
+              schemaRefs: [
+                {
+                  className: "TDevice",
+                  location: { file: "models/schemas.py", line: 69 },
+                  role: "request",
+                  tableName: "t_devices",
+                },
+              ],
+            }),
+            apiCall: apiCall(),
+            matchKind: "exact",
+          },
+        ],
+      });
+
+      const { nodes, edges } = projectDepth(output, "file");
+
+      const model = nodes.find((n) => n.kind === "model" && n.label === "TDevice");
+      const table = nodes.find((n) => n.kind === "table" && n.label === "t_devices");
+      expect(model).toBeDefined();
+      expect(table).toBeDefined();
+      // ハンドラのファイルノード(backend:file-users) を起点に model -> table が連結される。
+      expect(edges.some((e) => e.source === "backend:file-users" && e.target === model?.id)).toBe(
+        true,
+      );
+      expect(edges.some((e) => e.source === model?.id && e.target === table?.id)).toBe(true);
+      assertReferentialIntegrity(nodes, edges);
+    });
+
     it("projects a linkage between two functions in different files into one linkage edge", () => {
       const backendFn = fn({
         id: "backend:fn-getUser",
@@ -381,6 +417,41 @@ describe("projectDepth", () => {
       expect(structuralEdges).toHaveLength(1);
       expect(structuralEdges[0].source).toBe("backend:fn-a");
       expect(structuralEdges[0].target).toBe("backend:fn-b");
+      assertReferentialIntegrity(nodes, edges);
+    });
+
+    it("anchors model/table nodes to the handler function node (function -> model -> table)", () => {
+      const output = buildOutput({
+        functions: [fn()], // backend:fn-getUser (= route.entryFunctionId)
+        linkages: [
+          {
+            route: route({
+              schemaRefs: [
+                {
+                  className: "TDevice",
+                  location: { file: "models/schemas.py", line: 69 },
+                  role: "request",
+                  tableName: "t_devices",
+                },
+              ],
+            }),
+            apiCall: apiCall(),
+            matchKind: "exact",
+          },
+        ],
+      });
+
+      const { nodes, edges } = projectDepth(output, "function");
+
+      const model = nodes.find((n) => n.kind === "model" && n.label === "TDevice");
+      const table = nodes.find((n) => n.kind === "table" && n.label === "t_devices");
+      expect(model).toBeDefined();
+      expect(table).toBeDefined();
+      // ハンドラ関数ノード(backend:fn-getUser) を起点に model -> table が連結される。
+      expect(edges.some((e) => e.source === "backend:fn-getUser" && e.target === model?.id)).toBe(
+        true,
+      );
+      expect(edges.some((e) => e.source === model?.id && e.target === table?.id)).toBe(true);
       assertReferentialIntegrity(nodes, edges);
     });
 

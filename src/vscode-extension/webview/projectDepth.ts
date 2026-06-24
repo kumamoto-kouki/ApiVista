@@ -262,6 +262,17 @@ function projectFileDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: G
     });
   }
 
+  // 各ルートの schemaRefs を、そのハンドラが属するファイルノードへ「ファイル → モデル → テーブル」で連結。
+  const seenNodeIds = new Set<string>();
+  const seenEdgeIds = new Set<string>();
+  for (const route of allRoutes(output)) {
+    const backendFileId = functionFileById.get(route.entryFunctionId);
+    if (backendFileId === undefined || !fileIds.has(backendFileId)) {
+      continue;
+    }
+    appendSchemaNodes(backendFileId, route.schemaRefs, nodes, edges, seenNodeIds, seenEdgeIds);
+  }
+
   return { nodes, edges };
 }
 
@@ -317,7 +328,29 @@ function projectFunctionDepth(output: LinkageOutput): { nodes: GraphNode[]; edge
     });
   }
 
+  // 各ルートの schemaRefs を、そのハンドラ関数ノード（entryFunctionId）へ「関数 → モデル → テーブル」で連結。
+  const seenNodeIds = new Set<string>();
+  const seenEdgeIds = new Set<string>();
+  for (const route of allRoutes(output)) {
+    if (!functionIds.has(route.entryFunctionId)) {
+      continue;
+    }
+    appendSchemaNodes(
+      route.entryFunctionId,
+      route.schemaRefs,
+      nodes,
+      edges,
+      seenNodeIds,
+      seenEdgeIds,
+    );
+  }
+
   return { nodes, edges };
+}
+
+/** 連携済み(linkages)・未連携(unmatchedRoutes)双方の全ルートを列挙する。 */
+function allRoutes(output: LinkageOutput): RouteRef[] {
+  return [...output.linkages.map((l) => l.route), ...output.unmatchedRoutes];
 }
 
 /**
