@@ -28,6 +28,21 @@ const TS_JS_EXTENSIONS = [".ts", ".js"] as const;
 const VUE_EXTENSION = ".vue";
 
 /**
+ * 再帰走査から除外するディレクトリ名（依存/ビルド/キャッシュ）。
+ * これらは解析対象でないうえ、node_modules 内の型定義(.d.ts)や minified バンドルを
+ * ts-morph Project に投入すると解析が停止（事実上のハング）する原因になるため走査しない。
+ */
+const EXCLUDED_DIR_NAMES = new Set<string>([
+  "node_modules",
+  ".nuxt",
+  ".output",
+  "dist",
+  ".git",
+  "coverage",
+  ".vercel",
+]);
+
+/**
  * Pass0 の出力。ts-morph Project と、fileId→SourceFile / fileId→segments の索引。
  *
  * `.ts/.js` の fileId はそのまま（`.vue` は拡張子そのまま `.vue`）。`.vue` 由来 SourceFile は
@@ -188,7 +203,7 @@ function listSourceFileIds(frontendRoot: string): string[] {
     for (const dirent of sorted) {
       const full = join(dir, dirent.name);
       if (dirent.isDirectory()) {
-        walk(full);
+        if (!EXCLUDED_DIR_NAMES.has(dirent.name)) walk(full);
       } else if (dirent.isFile() && isRecognizedExtension(dirent.name)) {
         results.push(toFileId(frontendRoot, full));
       }

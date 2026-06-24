@@ -197,4 +197,16 @@ describe("buildProject", () => {
     });
     expect([...project.fileIds]).toEqual(["a/first.ts", "m/mid.ts", "z/last.ts"]);
   });
+
+  it("excludes dependency/build dirs (node_modules/.nuxt/dist) from scanning (#2)", () => {
+    const { project } = build({
+      "composables/useUserApi.ts": "export const a = 1;\n",
+      "node_modules/foo/index.ts": "export const dep = 1;\n",
+      "node_modules/foo/types.d.ts": "export declare const t: number;\n",
+      ".nuxt/generated.ts": "export const gen = 1;\n",
+      "dist/bundle.js": "var x=1;\n",
+    });
+    // 自前ソースのみ。依存/ビルド配下は走査されない。
+    expect([...project.fileIds]).toEqual(["composables/useUserApi.ts"]);
+  });
 });

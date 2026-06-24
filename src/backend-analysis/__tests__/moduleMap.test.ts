@@ -1,3 +1,5 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -80,6 +82,28 @@ describe("buildModuleMap", () => {
 
     for (const fileId of map.pathToModule.keys()) {
       expect(fileId.endsWith(".py")).toBe(true);
+    }
+  });
+
+  it("excludes __pycache__/.venv from scanning (#2)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fce-modmap-"));
+    try {
+      mkdirSync(join(root, "api"), { recursive: true });
+      mkdirSync(join(root, "__pycache__"), { recursive: true });
+      mkdirSync(join(root, ".venv", "lib"), { recursive: true });
+      writeFileSync(join(root, "api", "items.py"), "def f():\n    return 1\n", "utf8");
+      writeFileSync(join(root, "__pycache__", "items.cpython-312.py"), "x = 1\n", "utf8");
+      writeFileSync(join(root, ".venv", "lib", "dep.py"), "y = 1\n", "utf8");
+
+      const collector = new WarningCollector();
+      const map = await buildModuleMap(root, collector);
+
+      const fileIds = [...map.pathToModule.keys()];
+      expect(fileIds).toContain("api/items.py");
+      expect(fileIds.some((id) => id.includes("__pycache__"))).toBe(false);
+      expect(fileIds.some((id) => id.includes(".venv"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

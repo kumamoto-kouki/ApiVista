@@ -219,6 +219,52 @@ describe("webview/main.ts", () => {
     expect(options.userPanningEnabled).toBe(false);
   });
 
+  it("clamps zoom with minZoom/maxZoom so few/many nodes don't over-zoom (#3)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const options = cytoscapeMock.mock.calls[0][0] as { minZoom?: number; maxZoom?: number };
+    expect(options.maxZoom).toBe(1);
+    expect(options.minZoom).toBeGreaterThan(0);
+    expect(options.minZoom).toBeLessThan(1);
+  });
+
+  it("caps the orphan-warning list height with scroll so it doesn't take over the screen (#4)", async () => {
+    await import("../main.js");
+    // どのノードにも紐付かない警告 → 孤立警告セクションに表示される
+    dispatchLinkageData(buildOutput({ warnings: [{ target: "x", reason: "y" }] }));
+
+    const section = document.getElementById("orphan-section")!;
+    expect(section.style.display).not.toBe("none");
+    // ヘッダ直下のリスト（チップ群コンテナ）に高さ上限と縦スクロールが付いていること
+    const list = section.querySelector<HTMLElement>('div[style*="overflow-y"]')!;
+    expect(list).not.toBeNull();
+    expect(list.style.maxHeight).not.toBe("");
+    expect(list.style.overflowY).toBe("auto");
+  });
+
+  it("toggles the orphan-warning area collapsed/expanded on header click and keeps state across re-render", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({ warnings: [{ target: "x", reason: "y" }] }));
+
+    const section = document.getElementById("orphan-section")!;
+    const header = section.querySelector<HTMLElement>("div")!;
+    const list = section.querySelector<HTMLElement>('div[style*="overflow-y"]')!;
+
+    // 既定は展開
+    expect(list.style.display).toBe("flex");
+
+    // ヘッダクリックで折りたたみ
+    header.click();
+    expect(list.style.display).toBe("none");
+
+    // 再描画後も折りたたみ状態を維持する
+    dispatchLinkageData(buildOutput({ warnings: [{ target: "z", reason: "w" }] }));
+    const sectionAfter = document.getElementById("orphan-section")!;
+    const listAfter = sectionAfter.querySelector<HTMLElement>('div[style*="overflow-y"]')!;
+    expect(listAfter.style.display).toBe("none");
+  });
+
   it("pans the graph on right-button drag (mousedown button=2 + mousemove → cy.pan)", async () => {
     await import("../main.js");
     dispatchLinkageData(buildOutput({}));

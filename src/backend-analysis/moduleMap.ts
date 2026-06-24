@@ -136,6 +136,22 @@ function collectExportedNames(tree: Tree): Set<string> {
 }
 
 /**
+ * 再帰走査から除外するディレクトリ名（仮想環境/キャッシュ/VCS）。
+ * 解析対象でないうえ、`.venv` 配下の site-packages などを走査すると大量の `.py` を拾って
+ * 解析時間が膨れ上がるため走査しない。
+ */
+const EXCLUDED_DIR_NAMES = new Set<string>([
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  "node_modules",
+]);
+
+/**
  * `backendRoot` 配下の `.py` ファイル絶対パスを再帰列挙する（決定性のため昇順ソート）。
  */
 async function listPythonFiles(backendRoot: string): Promise<string[]> {
@@ -147,7 +163,7 @@ async function listPythonFiles(backendRoot: string): Promise<string[]> {
     for (const dirent of sorted) {
       const full = join(dir, dirent.name);
       if (dirent.isDirectory()) {
-        await walk(full);
+        if (!EXCLUDED_DIR_NAMES.has(dirent.name)) await walk(full);
       } else if (dirent.isFile() && dirent.name.endsWith(".py")) {
         results.push(full);
       }

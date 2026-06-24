@@ -80,6 +80,10 @@ orphanSection.id = "orphan-section";
 orphanSection.style.cssText =
   "flex-shrink:0;display:none;border-top:1px solid var(--vscode-widget-border,#2b2b2b);";
 
+// 孤立警告セクションの折りたたみ状態。再描画(renderOrphanWarnings)で DOM を作り直すため、
+// 状態をモジュールスコープに保持しないと開閉がリセットされる。
+let orphanCollapsed = false;
+
 appRoot.appendChild(depthSwitchContainer);
 appRoot.appendChild(legendContainer);
 appRoot.appendChild(graphContainer);
@@ -269,6 +273,11 @@ const WARNING_ITEM_H = 34;
 const ROW_GAP = 16;
 /** structural ネスト1階層ごとの X インデント（px）。 */
 const INDENT_X = 60;
+
+/** ズーム上限（カードを原寸より拡大しない。枠が少ないときの過剰拡大を防ぐ）。 */
+const MAX_ZOOM = 1;
+/** ズーム下限（枠が多いときの極小化を防ぐ。はみ出しは右ドラッグパン/ホイールで閲覧）。 */
+const MIN_ZOOM = 0.2;
 
 // ─────────────────────────────────────────
 // 凡例
@@ -768,14 +777,33 @@ function renderOrphanWarnings(orphans: Warning[]): void {
   orphanSection.style.display = "block";
   const theme = buildTheme();
 
-  // ヘッダ
+  // ヘッダ（クリックで折りたたみ/展開）
   const header = document.createElement("div");
-  header.style.cssText = `padding:6px 12px 4px;font-size:13px;font-weight:600;color:${theme.textSub};letter-spacing:.3px;`;
-  header.textContent = "該当ノードのない警告";
+  header.style.cssText = `padding:6px 12px 4px;font-size:13px;font-weight:600;color:${theme.textSub};letter-spacing:.3px;cursor:pointer;user-select:none;`;
+  const indicator = document.createElement("span");
+  indicator.style.cssText = "display:inline-block;width:1.2em;";
+  const label = document.createElement("span");
+  label.textContent = `該当ノードのない警告 (${orphans.length})`;
+  header.appendChild(indicator);
+  header.appendChild(label);
   orphanSection.appendChild(header);
 
   const list = document.createElement("div");
-  list.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;";
+  // 高さ上限 + 縦スクロール。警告が多くてもセクションが伸び続けてグラフ領域を圧迫しないようにする
+  // （ヘッダはセクション直下のままなので常時表示され、リスト部だけがスクロールする）。
+  list.style.cssText =
+    "display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;max-height:22vh;overflow-y:auto;";
+
+  // 折りたたみ状態を表示へ反映する（インジケータ ▼/▶ と list の表示切替）。
+  const applyCollapsed = (): void => {
+    indicator.textContent = orphanCollapsed ? "▶" : "▼";
+    list.style.display = orphanCollapsed ? "none" : "flex";
+  };
+  applyCollapsed();
+  header.addEventListener("click", () => {
+    orphanCollapsed = !orphanCollapsed;
+    applyCollapsed();
+  });
 
   for (const w of orphans) {
     const kind = inferWarningKind(w);
@@ -871,6 +899,10 @@ function renderGraph(): void {
     container: graphContainer,
     elements,
     style: buildCytoscapeStyle(),
+    // ズーム上下限。fit も cy.zoom() もこの範囲にクランプされるため、枠が少ない/多いときの
+    // 過剰拡大・極小化を防ぐ（手動ホイールズームも同じ範囲で頭打ちになる）。
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
     layout: {
       name: "preset",
       fit: true,
