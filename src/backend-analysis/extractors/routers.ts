@@ -59,9 +59,13 @@ export function extractRouterRelations(tree: Tree, fileId: string): RouterExtrac
   const fastapiInstances: FastAPIInstance[] = [];
   const includeRouterCalls: IncludeRouterCall[] = [];
 
+  // f-string prefix（`prefix=f"{API_PREFIX}/devices"`）を畳み込むため、同一ファイルの
+  // モジュールレベル文字列定数（`API_PREFIX = "/v1"`）を先に集める。
+  const constants = collectModuleStringConstants(tree);
+
   for (const node of iterNodes(tree.rootNode)) {
     if (node.type === "assignment") {
-      const router = routerFromAssignment(node, fileId);
+      const router = routerFromAssignment(node, fileId, constants);
       if (router !== null) {
         routers.push(router);
       }
@@ -70,7 +74,7 @@ export function extractRouterRelations(tree: Tree, fileId: string): RouterExtrac
         fastapiInstances.push(fastapi);
       }
     } else if (node.type === "call") {
-      const include = includeRouterFromCall(node, fileId);
+      const include = includeRouterFromCall(node, fileId, constants);
       if (include !== null) {
         includeRouterCalls.push(include);
       }
@@ -78,6 +82,35 @@ export function extractRouterRelations(tree: Tree, fileId: string): RouterExtrac
   }
 
   return { routers, fastapiInstances, includeRouterCalls };
+}
+
+/**
+ * モジュールレベルの単純文字列定数（`NAME = "literal"`）を集める。
+ * f-string prefix の補間（`{API_PREFIX}`）を畳み込むために使う。関数内ローカルや非リテラルは対象外。
+ */
+function collectModuleStringConstants(tree: Tree): Map<string, string> {
+  const constants = new Map<string, string>();
+  const root = tree.rootNode;
+  for (let i = 0; i < root.childCount; i += 1) {
+    const stmt = root.child(i);
+    if (stmt === null || stmt.type !== "expression_statement") {
+      continue;
+    }
+    const assign = stmt.child(0);
+    if (assign === null || assign.type !== "assignment") {
+      continue;
+    }
+    const left = fieldChild(assign, "left");
+    const right = fieldChild(assign, "right");
+    if (left === null || right === null || left.type !== "identifier" || right.type !== "string") {
+      continue;
+    }
+    if (hasInterpolation(right)) {
+      continue; // 単純リテラルのみ定数化（補間を含む右辺は畳み込みの対象外）。
+    }
+    constants.set(left.text, stripStringLiteral(right.text));
+  }
+  return constants;
 }
 
 /** `rootNode` 配下の全ノードを深さ優先で列挙する。 */
@@ -99,7 +132,11 @@ function* iterNodes(root: Node): Generator<Node> {
  * `<name> = APIRouter(prefix=...)` 代入から `RouterDefinition` を判定する。
  * 関数名が素の識別子 `APIRouter` の呼び出しでなければ `null`。
  */
-function routerFromAssignment(assignment: Node, fileId: string): RouterDefinition | null {
+function routerFromAssignment(
+  assignment: Node,
+  fileId: string,
+  constants: Map<string, string>,
+): RouterDefinition | null {
   const variableName = simpleAssignmentTarget(assignment);
   if (variableName === null) {
     return null;
@@ -110,7 +147,7 @@ function routerFromAssignment(assignment: Node, fileId: string): RouterDefinitio
   }
   return {
     variableName,
-    prefix: keywordStringLiteral(fieldChild(callNode, "arguments"), "prefix"),
+    prefix: keywordStringLiteral(fieldChild(callNode, "arguments"), "prefix", constants),
     location: toSourceLocation(fileId, assignment),
   };
 }
@@ -138,7 +175,11 @@ function fastapiFromAssignment(assignment: Node, fileId: string): FastAPIInstanc
  * `<obj>.include_router(<routerExpr>, prefix=...)` 呼び出しから `IncludeRouterCall` を判定する。
  * 関数が属性式で属性名 `include_router`、かつオブジェクトが単純識別子でなければ `null`。
  */
-function includeRouterFromCall(callNode: Node, fileId: string): IncludeRouterCall | null {
+function includeRouterFromCall(
+  callNode: Node,
+  fileId: string,
+  constants: Map<string, string>,
+): IncludeRouterCall | null {
   const funcExpr = fieldChild(callNode, "function");
   if (funcExpr === null || funcExpr.type !== "attribute") {
     return null;
@@ -161,7 +202,7 @@ function includeRouterFromCall(callNode: Node, fileId: string): IncludeRouterCal
   return {
     targetName: objNode.text,
     routerExpr: firstArg.text,
-    prefix: keywordStringLiteral(argumentList, "prefix"),
+    prefix: keywordStringLiteral(argumentList, "prefix", constants),
     location: toSourceLocation(fileId, callNode),
   };
 }
@@ -197,7 +238,11 @@ function isBareCallTo(callNode: Node, name: string): boolean {
  * `argument_list` 中の指定キーワード引数の値が文字列リテラルなら、クオート除去した
  * 内側テキストを返す。無い／非リテラルなら `""`。
  */
-function keywordStringLiteral(argumentList: Node | null, keyword: string): string {
+function keywordStringLiteral(
+  argumentList: Node | null,
+  keyword: string,
+  constants: Map<string, string>,
+): string {
   if (argumentList === null) {
     return "";
   }
@@ -211,12 +256,72 @@ function keywordStringLiteral(argumentList: Node | null, keyword: string): strin
       continue;
     }
     const valueNode = fieldChild(child, "value");
-    if (valueNode === null || valueNode.type !== "string") {
+    if (valueNode === null) {
       return "";
     }
-    return stripStringLiteral(valueNode.text);
+    return resolveStringValue(valueNode, constants);
   }
   return "";
+}
+
+/**
+ * 文字列値ノードを静的文字列へ解決する。
+ * - 素の文字列リテラル → クオート除去。
+ * - f-string（補間あり）→ 補間がモジュール定数の識別子なら畳み込む。1つでも解決不能なら "".
+ * - 識別子単独（`prefix=API_PREFIX`）→ モジュール定数を引く。無ければ "".
+ * - それ以外（変数式・呼び出し等）→ "".
+ */
+function resolveStringValue(valueNode: Node, constants: Map<string, string>): string {
+  if (valueNode.type === "identifier") {
+    return constants.get(valueNode.text) ?? "";
+  }
+  if (valueNode.type !== "string") {
+    return "";
+  }
+  if (!hasInterpolation(valueNode)) {
+    return stripStringLiteral(valueNode.text);
+  }
+  return foldFString(valueNode, constants) ?? "";
+}
+
+/** 文字列ノードが補間（f-string の `{expr}`）を1つ以上含むか。 */
+function hasInterpolation(stringNode: Node): boolean {
+  for (let i = 0; i < stringNode.childCount; i += 1) {
+    if (stringNode.child(i)?.type === "interpolation") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * f-string を静的文字列へ畳み込む。リテラル部分（`string_content`）はそのまま、補間
+ * `{NAME}` は `NAME` がモジュール定数なら値で置換する。補間が単純識別子でない／定数に無い
+ * 場合は静的決定不能として `null`（呼び出し側は "" 扱い）。
+ */
+function foldFString(stringNode: Node, constants: Map<string, string>): string | null {
+  let result = "";
+  for (let i = 0; i < stringNode.childCount; i += 1) {
+    const child = stringNode.child(i);
+    if (child === null) {
+      continue;
+    }
+    if (child.type === "string_content" || child.type === "escape_sequence") {
+      result += child.text;
+    } else if (child.type === "interpolation") {
+      const expr = fieldChild(child, "expression");
+      if (expr === null || expr.type !== "identifier") {
+        return null;
+      }
+      const value = constants.get(expr.text);
+      if (value === undefined) {
+        return null;
+      }
+      result += value;
+    }
+    // string_start / string_end（クオート・接頭辞）は無視。
+  }
+  return result;
 }
 
 /**

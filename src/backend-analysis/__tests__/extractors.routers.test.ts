@@ -129,3 +129,50 @@ describe("extractRouterRelations", () => {
     expect(local?.prefix).toBe("");
   });
 });
+
+describe("extractRouterRelations — f-string / 定数 prefix の畳み込み", () => {
+  beforeEach(() => {
+    resetPythonParser();
+  });
+
+  it("f-string prefix を同一ファイルのモジュール定数で畳み込む", async () => {
+    const source = [
+      "from fastapi import FastAPI",
+      'API_PREFIX = "/v1"',
+      "app = FastAPI()",
+      'app.include_router(device_router, prefix=f"{API_PREFIX}/devices")',
+      "",
+    ].join("\n");
+    const tree = await parse(source);
+    const result = extractRouterRelations(tree, "main.py");
+
+    const call = result.includeRouterCalls.find((c) => c.routerExpr === "device_router");
+    expect(call).toBeDefined();
+    expect(call?.prefix).toBe("/v1/devices");
+  });
+
+  it("素の識別子 prefix（prefix=API_PREFIX）も定数で解決する", async () => {
+    const source = [
+      "from fastapi import FastAPI",
+      'API_PREFIX = "/v1"',
+      "app = FastAPI()",
+      "app.include_router(r, prefix=API_PREFIX)",
+      "",
+    ].join("\n");
+    const tree = await parse(source);
+    const result = extractRouterRelations(tree, "main.py");
+    expect(result.includeRouterCalls[0]?.prefix).toBe("/v1");
+  });
+
+  it("解決できない補間（未知の変数）は静的決定不能として空 prefix", async () => {
+    const source = [
+      "from fastapi import FastAPI",
+      "app = FastAPI()",
+      'app.include_router(r, prefix=f"{UNKNOWN}/devices")',
+      "",
+    ].join("\n");
+    const tree = await parse(source);
+    const result = extractRouterRelations(tree, "main.py");
+    expect(result.includeRouterCalls[0]?.prefix).toBe("");
+  });
+});

@@ -69,9 +69,6 @@ function resolveRouterExpr(
   symbolTables: Map<string, Map<string, Binding>>,
 ): { fileId: string; routerPrefix: string } | null {
   const { head, attribute } = splitRouterExpr(routerExpr);
-  if (attribute === null) {
-    return null;
-  }
 
   const table = symbolTables.get(originFileId);
   if (table === undefined) {
@@ -91,7 +88,16 @@ function resolveRouterExpr(
   if (targetFile === undefined) {
     return null;
   }
-  const routerDef = targetFile.routers.find((r) => r.variableName === attribute);
+  // ルーター変数名の決定:
+  // - `module.router` 形式（`from api.v1 import device_api` + `include_router(device_api.router)`）
+  //   → 属性名 `router`。binding.qualifiedName はモジュールを指し、resolved.name は空。
+  // - 裸の識別子（`from api.v1.device_api import router as device_router` + `include_router(device_router)`）
+  //   → binding.qualifiedName 末尾が import されたシンボル名で、resolved.name に入る（= `router`）。
+  const routerVarName = attribute ?? resolved.name;
+  if (routerVarName === "") {
+    return null;
+  }
+  const routerDef = targetFile.routers.find((r) => r.variableName === routerVarName);
   if (routerDef === undefined) {
     return null;
   }

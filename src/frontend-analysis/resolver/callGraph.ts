@@ -42,6 +42,7 @@ import type { FrontendProject } from "../project.js";
 import type { WarningCollector } from "../warnings.js";
 
 import { extractApiCalls, type ApiCallCandidate } from "../extractors/apiCalls.js";
+import { extractGeneratedClientApiCalls } from "../extractors/generatedClient.js";
 import { extractCalls, type CallSiteEntry } from "../extractors/calls.js";
 import { extractDefs, type FunctionDef } from "../extractors/defs.js";
 import { extractTemplateRefs, type TemplateRefEdge } from "../extractors/templates.js";
@@ -96,7 +97,11 @@ export function extractPerFile(
 
     perFile.set(fileId, {
       fileId,
-      apiCalls: extractApiCalls(sourceFile, fileId, segments, collector),
+      apiCalls: [
+        ...extractApiCalls(sourceFile, fileId, segments, collector),
+        // 生成 OpenAPI クライアント（openapi-generator）のエンドポイントも併せて抽出する。
+        ...extractGeneratedClientApiCalls(sourceFile, fileId, segments),
+      ],
       defs: extractDefs(sourceFile, fileId, segments),
       calls: extractCalls(sourceFile, fileId, segments),
       templateRefs,
