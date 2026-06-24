@@ -534,4 +534,39 @@ describe("webview/main.ts", () => {
     expect(eventNames).toContain("mouseover");
     expect(eventNames).toContain("mouseout");
   });
+
+  it("hover brightens the reachable cards and leaves others unchanged (no dimming)", async () => {
+    await import("../main.js");
+    // 独立した2つの連携。片方をホバーしても、もう片方（連携はあるが到達しない）は無変化であること。
+    const output = buildOutput({
+      linkages: [
+        { route: route(), apiCall: apiCall(), matchKind: "exact" },
+        {
+          route: route({ path: "/api/posts/{id}" }),
+          apiCall: apiCall({ urlPattern: "/api/posts/{}" }),
+          matchKind: "exact",
+        },
+      ],
+    });
+    dispatchLinkageData(output);
+
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".node-card"));
+    const hovered = cards.find((c) => c.textContent?.includes("GET /api/users/{}"))!; // apiCall1
+    const linkedRoute = cards.find((c) => c.textContent?.includes("GET /api/users/{id}"))!; // route1
+    const other = cards.find((c) => c.textContent?.includes("GET /api/posts/{}"))!; // apiCall2(別連携)
+    expect(hovered).toBeTruthy();
+    expect(linkedRoute).toBeTruthy();
+    expect(other).toBeTruthy();
+
+    hovered.dispatchEvent(new MouseEvent("mouseenter"));
+    // 到達集合(ホバーした apiCall + 連携先 route)は明るく強調、別連携の apiCall は無変化。
+    expect(hovered.style.filter).toContain("brightness");
+    expect(linkedRoute.style.filter).toContain("brightness");
+    expect(other.style.filter).toBe("");
+    // 減光しない: どのカードも opacity は変更しない。
+    expect(cards.every((c) => c.style.opacity === "")).toBe(true);
+
+    hovered.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(cards.every((c) => c.style.filter === "")).toBe(true);
+  });
 });

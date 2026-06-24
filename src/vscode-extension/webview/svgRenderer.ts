@@ -20,15 +20,17 @@ let linkageUpdateFn: (() => void) | null = null;
  */
 let hoverReachable: Set<string> | null = null;
 
-/** 両端 ID が到達集合に含まれる線の不透明度を返す（`hoverReachable===null` は常に不透明）。 */
-function lineOpacity(aId: string, bId: string): string {
-  if (hoverReachable === null) return "1";
-  return hoverReachable.has(aId) && hoverReachable.has(bId) ? "1" : "0.24";
+/**
+ * 両端 ID がホバー到達集合に含まれる線を「強調」するか返す。
+ * `hoverReachable===null`（非ホバー）や片端が含まれない線は非強調＝既定描画（減光しない）。
+ */
+function isLineEmphasized(aId: string, bId: string): boolean {
+  return hoverReachable !== null && hoverReachable.has(aId) && hoverReachable.has(bId);
 }
 
 /**
- * ホバー連鎖の到達集合を設定し、ツリーガイド・連携線を即時再描画して減光を反映する。
- * `null` を渡すと減光を解除する。
+ * ホバー連鎖の到達集合を設定し、ツリーガイド・連携線を即時再描画して強調を反映する。
+ * `null` を渡すと強調を解除する。
  */
 export function setHoverReachable(set: Set<string> | null): void {
   hoverReachable = set;
@@ -122,17 +124,20 @@ export function renderTreeGuides(
       for (const { id: childId, y: childCenterY, x: cVisualCenterX, color } of childData) {
         const childCardLeft = cVisualCenterX - (NODE_CARD_W / 2) * zoom;
         const arrowTip = childCardLeft;
-        const opacity = lineOpacity(parentId, childId);
+        // 到達集合内の線は太線＋明色で強調。非強調は既定（言語色・1.5・減光なし）。
+        const emphasized = isLineEmphasized(parentId, childId);
+        const lineColor = emphasized ? theme.edgeHi : color;
+        const lineWidth = emphasized ? "3" : "1.5";
 
         const curvePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
         curvePath.setAttribute(
           "d",
           `M${guideX},${pBottomY} C${guideX},${childCenterY} ${guideX},${childCenterY} ${arrowTip - 8},${childCenterY}`,
         );
-        curvePath.setAttribute("stroke", color);
-        curvePath.setAttribute("stroke-width", "1.5");
+        curvePath.setAttribute("stroke", lineColor);
+        curvePath.setAttribute("stroke-width", lineWidth);
         curvePath.setAttribute("fill", "none");
-        curvePath.setAttribute("opacity", opacity);
+        curvePath.setAttribute("opacity", "1");
         svg.appendChild(curvePath);
 
         const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -140,8 +145,8 @@ export function renderTreeGuides(
           "d",
           `M${arrowTip - 8},${childCenterY - 4.5} L${arrowTip},${childCenterY} L${arrowTip - 8},${childCenterY + 4.5} Z`,
         );
-        arrow.setAttribute("fill", color);
-        arrow.setAttribute("opacity", opacity);
+        arrow.setAttribute("fill", lineColor);
+        arrow.setAttribute("opacity", "1");
         svg.appendChild(arrow);
       }
     }
@@ -233,7 +238,11 @@ export function renderLinkageLines(
         "d",
         `M${srcRightX},${srcY} C${midX},${srcY} ${midX},${tgtY} ${tgtLeftX},${tgtY}`,
       );
-      pathEls[i].setAttribute("opacity", lineOpacity(sourceId, targetId));
+      // 到達集合内の連携線は太線＋明色で強調。非強調は既定（theme.edge・2・減光なし）。
+      const emphasized = isLineEmphasized(sourceId, targetId);
+      pathEls[i].setAttribute("stroke", emphasized ? theme.edgeHi : theme.edge);
+      pathEls[i].setAttribute("stroke-width", emphasized ? "4" : "2");
+      pathEls[i].setAttribute("opacity", "1");
     });
   };
 

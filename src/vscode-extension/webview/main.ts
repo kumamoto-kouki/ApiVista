@@ -635,6 +635,9 @@ let nodeCardUpdateFn: (() => void) | null = null;
  */
 let hoverAdj = new Map<string, Set<string>>();
 
+/** ホバー時に到達カードへ適用する明度アップ（周辺は無変化）。調整可。 */
+const HOVER_BRIGHTNESS = "brightness(1.4)";
+
 /** `hoverAdj` を `edges` から有向（source→target）で再構築する。 */
 function buildHoverAdjacency(edges: GraphEdge[]): void {
   hoverAdj = new Map();
@@ -792,19 +795,20 @@ function renderNodeCards(
       });
     }
 
-    // ホバー: 連鎖（無向で到達可能な全ノード）以外を減光。線（連携線・ツリーガイド）は
-    // svgRenderer 側へ到達集合を渡して減光させる（毎tick再描画されるため）。
+    // ホバー: 周辺を減光するのではなく、連鎖（到達可能な全ノード）を「明るく」強調する。
+    // 非到達は無変化。線（連携線・ツリーガイド）は svgRenderer 側へ到達集合を渡して太線＋明色で
+    // 強調させる（毎tick再描画されるため）。`opacity` でなく `filter` を使い、検索の減光/強調と競合させない。
     card.addEventListener("mouseenter", () => {
       const reachable = reachableNodeIds(node.id);
       for (const { el, nodeId: nid } of nodeCardEls) {
-        el.style.opacity = reachable.has(nid) ? "" : "0.24";
+        el.style.filter = reachable.has(nid) ? HOVER_BRIGHTNESS : "";
       }
       setHoverReachable(reachable);
     });
 
     card.addEventListener("mouseleave", () => {
       for (const { el } of nodeCardEls) {
-        el.style.opacity = "";
+        el.style.filter = "";
       }
       setHoverReachable(null);
     });
