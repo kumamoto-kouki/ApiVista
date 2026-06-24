@@ -229,3 +229,78 @@ async function copyLinkedChainImport(output: LinkageOutput, focalId: string): Pr
   const { copyLinkedChain } = await import("../functionCopier.js");
   return copyLinkedChain(output, focalId, BE, FE);
 }
+
+async function copySelectedImport(output: LinkageOutput, ids: string[]): Promise<number> {
+  const { copySelectedFunctions } = await import("../functionCopier.js");
+  return copySelectedFunctions(output, ids, BE, FE);
+}
+
+describe("copySelectedFunctions", () => {
+  beforeEach(() => {
+    openTextDocumentMock.mockReset();
+    executeCommandMock.mockReset();
+    clipboardWriteMock.mockReset();
+    missingPaths = new Set();
+    openTextDocumentMock.mockImplementation((path: string) => {
+      if (missingPaths.has(path)) return Promise.reject(new Error("not found"));
+      return Promise.resolve({
+        uri: { fsPath: path },
+        getText: (range: { code: string }) => range.code,
+      });
+    });
+    executeCommandMock.mockImplementation((_cmd: string, uri: { fsPath: string }) =>
+      Promise.resolve(symbolsByPath.get(uri.fsPath) ?? []),
+    );
+  });
+
+  it("指定 id の関数のみを Markdown でコピーする（連鎖しない）", async () => {
+    const functions = [
+      fn({
+        id: "frontend:a",
+        side: "frontend",
+        location: { file: "a.ts", line: 1 },
+        calls: ["frontend:b"],
+      }),
+      fn({ id: "frontend:b", side: "frontend", location: { file: "b.ts", line: 1 } }),
+      fn({ id: "backend:c", side: "backend", location: { file: "c.py", line: 1 } }),
+    ];
+    const output = buildOutput(functions, []);
+    registerSymbols(functions);
+
+    // a と c だけ選択（b は a の callee だが連鎖しないので含めない）。
+    const count = await copySelectedImport(output, ["frontend:a", "backend:c"]);
+    expect(count).toBe(2);
+
+    const md = clipboardWriteMock.mock.calls[0][0] as string;
+    expect(md).toContain("# ApiVista: 選択枠コピー");
+    expect(md).toContain("code:a");
+    expect(md).toContain("code:c");
+    expect(md).not.toContain("code:b"); // 連鎖で b を含めない
+  });
+
+  it("重複・非実在 id は無視し、抽出不能なら skip する", async () => {
+    const functions = [
+      fn({ id: "frontend:a", side: "frontend", location: { file: "a.ts", line: 1 } }),
+      fn({ id: "frontend:b", side: "frontend", location: { file: "b.ts", line: 1 } }),
+    ];
+    const output = buildOutput(functions, []);
+    registerSymbols(functions);
+    missingPaths.add(`${FE}/b.ts`); // b は開けない
+
+    const count = await copySelectedImport(output, [
+      "frontend:a",
+      "frontend:a",
+      "frontend:b",
+      "missing",
+    ]);
+    expect(count).toBe(1); // a のみ（重複・非実在・抽出不能を除外）
+  });
+
+  it("コピー対象が無ければ 0 を返し clipboard を呼ばない", async () => {
+    const output = buildOutput([], []);
+    registerSymbols([]);
+    const count = await copySelectedImport(output, ["nope"]);
+    expect(count).toBe(0);
+    expect(clipboardWriteMock).not.toHaveBeenCalled();
+  });
+});

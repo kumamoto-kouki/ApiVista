@@ -225,6 +225,32 @@ describe("graphPanel.showOrReveal", () => {
     expect(onCopyLinked).toHaveBeenCalledWith(initialOutput, payload);
   });
 
+  it("Webviewから'copySelected'メッセージを受信すると、onCopySelectedを最新outputとpayloadで呼び出す", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+    const initialOutput = makeLinkageOutput();
+    const onCopySelected = vi.fn();
+
+    const { showOrReveal } = await import("../graphPanel.js");
+
+    showOrReveal(
+      { extensionUri: EXTENSION_URI } as never,
+      initialOutput,
+      undefined,
+      undefined,
+      onCopySelected,
+    );
+
+    const onMessageHandler = panel.webview.onDidReceiveMessage.mock.calls[0][0] as (
+      message: unknown,
+    ) => void;
+    const payload = { functionIds: ["backend:fn-getUser", "frontend:fn-fetchUser"] };
+    onMessageHandler({ type: "copySelected", payload });
+
+    expect(onCopySelected).toHaveBeenCalledTimes(1);
+    expect(onCopySelected).toHaveBeenCalledWith(initialOutput, payload);
+  });
+
   it("Webviewから'reanalyze'メッセージを受信すると、apivista.reanalyzeコマンドを実行する", async () => {
     const panel = makeFakePanel();
     createWebviewPanelMock.mockReturnValue(panel);

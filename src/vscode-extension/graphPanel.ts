@@ -40,6 +40,12 @@ let latestOutput: LinkageOutput | undefined;
 /** `copyLinked` メッセージを処理するためにホスト側（extension.ts）が注入するコールバック。 */
 export type CopyLinkedHandler = (output: LinkageOutput, payload: { functionId: string }) => void;
 
+/** `copySelected` メッセージを処理するためにホスト側が注入するコールバック。 */
+export type CopySelectedHandler = (
+  output: LinkageOutput,
+  payload: { functionIds: string[] },
+) => void;
+
 function handleNodeClick(
   payload: { file: string; line: number },
   panel: vscode.WebviewPanel,
@@ -56,6 +62,7 @@ function createPanel(
   initialOutput: LinkageOutput,
   onDidDispose?: () => void,
   onCopyLinked?: CopyLinkedHandler,
+  onCopySelected?: CopySelectedHandler,
 ): vscode.WebviewPanel {
   const localResourceRoot = vscode.Uri.joinPath(context.extensionUri, "media", "webview");
 
@@ -81,6 +88,12 @@ function createPanel(
     if (message.type === "copyLinked") {
       if (latestOutput) {
         onCopyLinked?.(latestOutput, message.payload);
+      }
+      return;
+    }
+    if (message.type === "copySelected") {
+      if (latestOutput) {
+        onCopySelected?.(latestOutput, message.payload);
       }
       return;
     }
@@ -119,6 +132,7 @@ export function showOrReveal(
   initialOutput: LinkageOutput,
   onDidDispose?: () => void,
   onCopyLinked?: CopyLinkedHandler,
+  onCopySelected?: CopySelectedHandler,
 ): boolean {
   if (currentPanel) {
     currentPanel.reveal();
@@ -126,7 +140,7 @@ export function showOrReveal(
   }
 
   latestOutput = initialOutput;
-  currentPanel = createPanel(context, initialOutput, onDidDispose, onCopyLinked);
+  currentPanel = createPanel(context, initialOutput, onDidDispose, onCopyLinked, onCopySelected);
   return true;
 }
 

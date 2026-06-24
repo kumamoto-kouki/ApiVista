@@ -18,4 +18,5 @@ export type WebviewToHostMessage =
   | { type: "ready" }
   | { type: "nodeClick"; payload: { file: string; line: number } }
   | { type: "copyLinked"; payload: { functionId: string } }
+  | { type: "copySelected"; payload: { functionIds: string[] } }
   | { type: "reanalyze" };

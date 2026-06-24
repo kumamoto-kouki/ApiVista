@@ -194,13 +194,16 @@ export function renderLinkageLines(
   const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
   const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
   marker.setAttribute("id", "linkage-arrow");
-  marker.setAttribute("markerWidth", "8");
-  marker.setAttribute("markerHeight", "6");
-  marker.setAttribute("refX", "8");
-  marker.setAttribute("refY", "3");
+  // markerUnits を userSpaceOnUse にして矢印を線幅に比例させない（ホバー強調で線を太くしても矢印は一定）。
+  // 寸法は従来（線幅2 × markerUnits=strokeWidth）の見た目（16×12）に合わせて絶対値化する。
+  marker.setAttribute("markerUnits", "userSpaceOnUse");
+  marker.setAttribute("markerWidth", "16");
+  marker.setAttribute("markerHeight", "12");
+  marker.setAttribute("refX", "16");
+  marker.setAttribute("refY", "6");
   marker.setAttribute("orient", "auto");
   const arrowPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-  arrowPoly.setAttribute("points", "0 0, 8 3, 0 6");
+  arrowPoly.setAttribute("points", "0 0, 16 6, 0 12");
   arrowPoly.setAttribute("fill", theme.edge);
   marker.appendChild(arrowPoly);
   defs.appendChild(marker);

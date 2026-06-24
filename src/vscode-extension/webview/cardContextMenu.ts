@@ -11,8 +11,12 @@
 import type { GraphNode } from "./projectDepth.js";
 
 export interface CardContextMenu {
-  /** `(x, y)` 画面座標にメニューを開き、選択時 `onCopy(node)` を発火する。 */
-  open(x: number, y: number, node: GraphNode): void;
+  /**
+   * `(x, y)` 画面座標にメニューを開く。
+   * 「連携関数をコピー」は `node.functionId` を持つ枠でのみ、「選択した枠をコピー」は
+   * `selectedCount > 0` のときのみ表示する。両方とも非表示なら開かない。
+   */
+  open(x: number, y: number, node: GraphNode, selectedCount: number): void;
   /** メニューを閉じる（表示していなければ no-op）。 */
   close(): void;
   /** メニュー要素と登録したリスナーを破棄する。 */
@@ -22,9 +26,13 @@ export interface CardContextMenu {
 /**
  * カード右クリック用コンテキストメニューを生成する。
  *
- * @param onCopy 「連携関数をコピー」選択時に対象ノードで呼ばれるコールバック
+ * @param onCopyLinked 「連携関数をコピー」選択時に対象ノードで呼ばれるコールバック
+ * @param onCopySelected 「選択した枠をコピー」選択時に呼ばれるコールバック（選択集合は呼び出し側が保持）
  */
-export function createCardContextMenu(onCopy: (node: GraphNode) => void): CardContextMenu {
+export function createCardContextMenu(
+  onCopyLinked: (node: GraphNode) => void,
+  onCopySelected: () => void,
+): CardContextMenu {
   const menu = document.createElement("div");
   menu.setAttribute("role", "menu");
   menu.style.cssText = [
@@ -44,29 +52,42 @@ export function createCardContextMenu(onCopy: (node: GraphNode) => void): CardCo
 
   let currentNode: GraphNode | null = null;
 
-  const item = document.createElement("div");
-  item.setAttribute("role", "menuitem");
-  item.textContent = "連携関数をコピー";
-  item.style.cssText = [
-    "padding:5px 10px",
-    "border-radius:4px",
-    "cursor:pointer",
-    "white-space:nowrap",
-  ].join(";");
-  item.addEventListener("mouseenter", () => {
-    item.style.background = "var(--vscode-menu-selectionBackground,#04395e)";
-    item.style.color = "var(--vscode-menu-selectionForeground,#ffffff)";
-  });
-  item.addEventListener("mouseleave", () => {
-    item.style.background = "transparent";
-    item.style.color = "";
-  });
-  item.addEventListener("click", () => {
+  /** メニュー項目を生成する（ホバー配色付き）。`onClick` 内で `close()` 済み。 */
+  const makeItem = (onClick: () => void): HTMLDivElement => {
+    const el = document.createElement("div");
+    el.setAttribute("role", "menuitem");
+    el.style.cssText = [
+      "padding:5px 10px",
+      "border-radius:4px",
+      "cursor:pointer",
+      "white-space:nowrap",
+    ].join(";");
+    el.addEventListener("mouseenter", () => {
+      el.style.background = "var(--vscode-menu-selectionBackground,#04395e)";
+      el.style.color = "var(--vscode-menu-selectionForeground,#ffffff)";
+    });
+    el.addEventListener("mouseleave", () => {
+      el.style.background = "transparent";
+      el.style.color = "";
+    });
+    el.addEventListener("click", onClick);
+    return el;
+  };
+
+  const linkedItem = makeItem(() => {
     const node = currentNode;
     close();
-    if (node) onCopy(node);
+    if (node) onCopyLinked(node);
   });
-  menu.appendChild(item);
+  linkedItem.textContent = "連携関数をコピー";
+
+  const selectedItem = makeItem(() => {
+    close();
+    onCopySelected();
+  });
+
+  menu.appendChild(linkedItem);
+  menu.appendChild(selectedItem);
 
   document.body.appendChild(menu);
 
@@ -76,10 +97,16 @@ export function createCardContextMenu(onCopy: (node: GraphNode) => void): CardCo
     currentNode = null;
   }
 
-  function open(x: number, y: number, node: GraphNode): void {
+  function open(x: number, y: number, node: GraphNode, selectedCount: number): void {
     currentNode = node;
-    item.style.background = "transparent";
-    item.style.color = "";
+    // 表示可否: 連携関数=functionId 持ち、選択枠=選択あり。配色はホバー前状態に戻す。
+    for (const el of [linkedItem, selectedItem]) {
+      el.style.background = "transparent";
+      el.style.color = "";
+    }
+    linkedItem.style.display = node.functionId ? "block" : "none";
+    selectedItem.style.display = selectedCount > 0 ? "block" : "none";
+    selectedItem.textContent = `選択した枠をコピー (${selectedCount})`;
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
     menu.style.display = "block";

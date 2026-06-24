@@ -102,9 +102,9 @@ function reachableFunctionIds(adj: Map<string, Set<string>>, focalId: string): S
   return visited;
 }
 
-/** Markdown を生成する（先頭が起点関数）。 */
-function buildMarkdown(focalName: string, snippets: FunctionSnippet[]): string {
-  const lines: string[] = [`# ApiVista: 連携関数コピー — \`${focalName}\``];
+/** Markdown を生成する（`heading` を先頭見出しに、続けて各関数コードを並べる）。 */
+function buildMarkdown(heading: string, snippets: FunctionSnippet[]): string {
+  const lines: string[] = [heading];
   for (const fn of snippets) {
     lines.push(
       "",
@@ -168,6 +168,60 @@ export async function copyLinkedChain(
   if (snippets.length === 0) return 0;
 
   const focalName = byId.get(focalFunctionId)?.name ?? snippets[0].funcName;
-  await vscode.env.clipboard.writeText(buildMarkdown(focalName, snippets));
+  await vscode.env.clipboard.writeText(
+    buildMarkdown(`# ApiVista: 連携関数コピー — \`${focalName}\``, snippets),
+  );
+  return snippets.length;
+}
+
+/**
+ * 選択した枠（関数 ID 群）のコードだけを Markdown でクリップボードにコピーする（連鎖はしない）。
+ *
+ * @param output 表示中 / キャッシュ済みの LinkageOutput
+ * @param functionIds 選択枠の関数 ID 配列（重複・非実在は無視）
+ * @param backendRoot バックエンドルートの絶対パス
+ * @param frontendRoot フロントエンドルートの絶対パス
+ * @returns コピーした関数数（0 = 抽出不能）
+ */
+export async function copySelectedFunctions(
+  output: LinkageOutput,
+  functionIds: string[],
+  backendRoot: string,
+  frontendRoot: string,
+): Promise<number> {
+  const byId = new Map<string, LinkedFunctionNode>(output.functions.map((f) => [f.id, f]));
+
+  // 重複排除しつつ実在する関数のみ、(side, file, line) 昇順で決定的に整列する。
+  const seen = new Set<string>();
+  const ordered = functionIds
+    .filter((id) => {
+      if (seen.has(id) || !byId.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((id) => byId.get(id)!)
+    .sort((a, b) => {
+      if (a.side !== b.side) return a.side < b.side ? -1 : 1;
+      if (a.location.file !== b.location.file) return a.location.file < b.location.file ? -1 : 1;
+      return a.location.line - b.location.line;
+    });
+
+  const snippets: FunctionSnippet[] = [];
+  for (const fn of ordered) {
+    const root = fn.side === "backend" ? backendRoot : frontendRoot;
+    const code = await extractCode(join(root, fn.location.file), fn.name);
+    if (code) {
+      snippets.push({
+        funcName: fn.name,
+        fileRelPath: fn.location.file,
+        lang: langFromExt(fn.location.file),
+        code,
+      });
+    }
+  }
+
+  if (snippets.length === 0) return 0;
+
+  await vscode.env.clipboard.writeText(buildMarkdown("# ApiVista: 選択枠コピー", snippets));
   return snippets.length;
 }

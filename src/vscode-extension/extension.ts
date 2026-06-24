@@ -35,7 +35,7 @@
 import * as vscode from "vscode";
 
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
-import { copyLinkedChain } from "./functionCopier.js";
+import { copyLinkedChain, copySelectedFunctions } from "./functionCopier.js";
 import * as graphPanel from "./graphPanel.js";
 import { checkPreflight, PreflightError } from "./preflightChecker.js";
 import { createReanalysisWatcher } from "./reanalysisWatcher.js";
@@ -156,6 +156,9 @@ function openPanelAndStartWatcher(
     // 枠の右クリック → 連鎖関数コピー。最新 output は graphPanel が供給する。
     (latestOutput, payload) =>
       void runCopyLinkedChain(latestOutput, payload, backendRoot, frontendRoot),
+    // 枠の右クリック →「選択した枠をコピー」。選択枠の関数コードのみを Markdown 化。
+    (latestOutput, payload) =>
+      void runCopySelected(latestOutput, payload, backendRoot, frontendRoot),
   );
   if (!isNewPanel) {
     return;
@@ -235,6 +238,23 @@ async function runCopyLinkedChain(
   } else {
     void vscode.window.showInformationMessage(
       `ApiVista: ${count}個の関数をクリップボードにコピーしました。`,
+    );
+  }
+}
+
+/** 枠の右クリック（webview）から、選択した枠の関数コードのみを Markdown コピーする。 */
+async function runCopySelected(
+  output: Awaited<ReturnType<typeof analyze>>,
+  payload: { functionIds: string[] },
+  backendRoot: string,
+  frontendRoot: string,
+): Promise<void> {
+  const count = await copySelectedFunctions(output, payload.functionIds, backendRoot, frontendRoot);
+  if (count === 0) {
+    void vscode.window.showInformationMessage("ApiVista: コピー可能な枠が選択されていません。");
+  } else {
+    void vscode.window.showInformationMessage(
+      `ApiVista: ${count}個の枠をクリップボードにコピーしました。`,
     );
   }
 }

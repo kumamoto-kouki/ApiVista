@@ -27,6 +27,7 @@ import {
   renderTreeGuides,
   setHoverReachable,
 } from "./svgRenderer.js";
+import { clearMinimap, renderMinimap } from "./minimap.js";
 import { buildTheme } from "./themeManager.js";
 import {
   inferWarningKind,
@@ -46,14 +47,26 @@ const DEFAULT_DEPTH: Depth = "route";
 const vscodeApi = acquireVsCodeApi();
 
 // 枠（ノードカード）右クリック用コンテキストメニュー。選択で連鎖関数コピーを要求する。
-const cardContextMenu = createCardContextMenu((node) => {
-  if (node.functionId) {
-    vscodeApi.postMessage({
-      type: "copyLinked",
-      payload: { functionId: node.functionId },
-    });
-  }
-});
+const cardContextMenu = createCardContextMenu(
+  (node) => {
+    if (node.functionId) {
+      vscodeApi.postMessage({
+        type: "copyLinked",
+        payload: { functionId: node.functionId },
+      });
+    }
+  },
+  () => {
+    // 選択中の枠のうち functionId を持つものだけ集めてコピー要求を送る（model/table/file は対象外）。
+    const functionIds = nodeCardEls
+      .filter(({ nodeId }) => selectedNodeIds.has(nodeId))
+      .map(({ functionId }) => functionId)
+      .filter((id): id is string => id !== undefined);
+    if (functionIds.length > 0) {
+      vscodeApi.postMessage({ type: "copySelected", payload: { functionIds } });
+    }
+  },
+);
 
 const appRoot = document.getElementById("app") ?? document.body;
 appRoot.style.cssText = "display:flex;flex-direction:column;height:100%;overflow:hidden;";
@@ -622,9 +635,22 @@ type NodeCardEntry = {
   side: "backend" | "frontend";
   /** 検索一致判定用の小文字テキスト（label + sourceLocation.file）。 */
   searchText: string;
+  /** 対応する関数 ID（選択枠コピーの対象。route/apiCall/function 枠のみ持つ）。 */
+  functionId?: string;
 };
 let nodeCardEls: NodeCardEntry[] = [];
 let nodeCardUpdateFn: (() => void) | null = null;
+
+/** Ctrl/Cmd+クリックで複数選択中のノード id 集合。「選択した枠をコピー」の対象。 */
+let selectedNodeIds = new Set<string>();
+
+/** 選択状態を全カードの枠線(boxShadow)に反映する（選択中=リング、非選択=なし）。 */
+function applySelectionHighlight(): void {
+  const theme = buildTheme();
+  for (const { el, nodeId } of nodeCardEls) {
+    el.style.boxShadow = selectedNodeIds.has(nodeId) ? `0 0 0 2px ${theme.selected}` : "";
+  }
+}
 
 /**
  * 表示中エッジ（structural+linkage）から構築する**有向**隣接（source→target）。連鎖ホバーに使う。
@@ -669,9 +695,11 @@ function clearNodeCards(): void {
   }
   for (const { el } of nodeCardEls) el.remove();
   nodeCardEls = [];
+  selectedNodeIds.clear(); // 再描画（深度切替/再解析）でノード集合が変わるため選択をリセット
   cardContextMenu.close();
   clearTreeGuides(cy);
   clearLinkageLines();
+  clearMinimap(cy);
 }
 
 function updateNodeCardPositions(): void {
@@ -764,19 +792,22 @@ function renderNodeCards(
     const card = createNodeCard(node, connCount.get(node.id) ?? 0, warnings, theme);
     card.dataset.depth = String(depths.get(node.id) ?? 0);
 
-    // クリック: カードをハイライト（コードジャンプは [data-code-link] 要素のみ）
-    card.addEventListener("click", () => {
-      for (const { el } of nodeCardEls) {
-        el.style.boxShadow = "";
+    // クリック: 通常=単一選択 / Ctrl(Cmd)+クリック=トグル複数選択（コードジャンプは [data-code-link] のみ）
+    card.addEventListener("click", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (selectedNodeIds.has(node.id)) selectedNodeIds.delete(node.id);
+        else selectedNodeIds.add(node.id);
+      } else {
+        selectedNodeIds = new Set([node.id]);
       }
-      card.style.boxShadow = `0 0 0 2px ${theme.selected}`;
+      applySelectionHighlight();
     });
 
-    // 右クリック: 連鎖関数コピー用の日本語コンテキストメニューを開く（functionId を持つ枠のみ）
+    // 右クリック: コンテキストメニュー。連携関数コピー(functionId 持ち)＋選択枠コピー(選択あり)を提示。
     card.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      if (node.functionId) {
-        cardContextMenu.open(e.clientX, e.clientY, node);
+      if (node.functionId || selectedNodeIds.size > 0) {
+        cardContextMenu.open(e.clientX, e.clientY, node, selectedNodeIds.size);
       }
     });
 
@@ -819,6 +850,7 @@ function renderNodeCards(
       nodeId: node.id,
       side: node.side,
       searchText: `${node.label} ${node.sourceLocation?.file ?? ""}`.toLowerCase(),
+      functionId: node.functionId,
     });
   }
 
@@ -1042,6 +1074,7 @@ function renderGraph(): void {
   cy.on("tap", (event) => {
     if (event.target === cy) {
       cy?.elements().removeClass("dim").unselect();
+      selectedNodeIds.clear();
       for (const { el } of nodeCardEls) {
         el.style.boxShadow = "";
         el.style.opacity = "";
@@ -1063,6 +1096,7 @@ function renderGraph(): void {
   renderNodeCards(nodes, edges, warningsByNode, depths);
   renderTreeGuides(cy, graphContainer, nodes, edges, depths, primaryParentOf, warningsByNode);
   renderLinkageLines(cy, graphContainer, nodes, edges, depths);
+  renderMinimap(cy, graphContainer, nodes);
   renderOrphanWarnings(orphanWarnings);
 
   // 再描画（再解析・深度切替）後も検索中なら一致表示を維持する。

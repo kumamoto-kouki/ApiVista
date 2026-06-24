@@ -569,4 +569,60 @@ describe("webview/main.ts", () => {
     hovered.dispatchEvent(new MouseEvent("mouseleave"));
     expect(cards.every((c) => c.style.filter === "")).toBe(true);
   });
+
+  it("renders a minimap overlay and pans on click", async () => {
+    await import("../main.js");
+    dispatchLinkageData(
+      buildOutput({ linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }] }),
+    );
+
+    const minimap = document.querySelector<HTMLElement>('[data-minimap="true"]');
+    expect(minimap).not.toBeNull();
+
+    const cyInstance = cytoscapeMock.mock.results.at(-1)!.value as {
+      pan: ReturnType<typeof vi.fn>;
+    };
+    cyInstance.pan.mockClear();
+    minimap!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(cyInstance.pan).toHaveBeenCalled();
+  });
+
+  it("supports Ctrl+Click multi-select and copies selected frames via the context menu", async () => {
+    await import("../main.js");
+    dispatchLinkageData(
+      buildOutput({
+        linkages: [
+          { route: route(), apiCall: apiCall(), matchKind: "exact" },
+          {
+            route: route({ path: "/api/posts/{id}" }),
+            apiCall: apiCall({ urlPattern: "/api/posts/{}" }),
+            matchKind: "exact",
+          },
+        ],
+      }),
+    );
+
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".node-card"));
+    const routeCard = cards.find((c) => c.textContent?.includes("GET /api/users/{id}"))!;
+    const apiCard = cards.find((c) => c.textContent?.includes("GET /api/users/{}"))!;
+
+    // 通常クリック = 単一選択
+    routeCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(routeCard.style.boxShadow).not.toBe("");
+    // Ctrl+クリック = 追加（複数選択）
+    apiCard.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    expect(apiCard.style.boxShadow).not.toBe("");
+    expect(routeCard.style.boxShadow).not.toBe("");
+
+    // 右クリック → メニューの「選択した枠をコピー」→ copySelected を post
+    postMessageMock.mockClear();
+    routeCard.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    const selectedItem = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent?.includes("選択した枠をコピー"))!;
+    expect(selectedItem.style.display).toBe("block");
+    selectedItem.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(postMessageMock).toHaveBeenCalledWith(expect.objectContaining({ type: "copySelected" }));
+  });
 });
