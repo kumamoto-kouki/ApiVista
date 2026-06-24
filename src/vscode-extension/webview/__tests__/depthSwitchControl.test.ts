@@ -96,4 +96,26 @@ describe("createDepthSwitchControl", () => {
     expect(onDepthChangeA).toHaveBeenCalledWith("function");
     expect(onDepthChangeB).not.toHaveBeenCalled();
   });
+
+  it("does not render a reanalyze button when onReanalyze is omitted", () => {
+    const container = createContainer();
+    createDepthSwitchControl(container, vi.fn());
+    const reanalyze = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("再解析"),
+    );
+    expect(reanalyze).toBeUndefined();
+  });
+
+  it("renders a reanalyze button that invokes onReanalyze on click", () => {
+    const container = createContainer();
+    const onReanalyze = vi.fn();
+    createDepthSwitchControl(container, vi.fn(), onReanalyze);
+
+    const reanalyze = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("再解析"),
+    );
+    expect(reanalyze).toBeDefined();
+    reanalyze?.click();
+    expect(onReanalyze).toHaveBeenCalledTimes(1);
+  });
 });

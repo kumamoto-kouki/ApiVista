@@ -165,6 +165,11 @@ function handlerRefCandidates(funcNode: Node, table: Map<string, Binding>): Sche
       if (param === null) {
         continue;
       }
+      // `= Depends(...)` / `= Security(...)` を持つ引数は FastAPI の依存性注入（DBセッション・
+      // クエリパラメータ・サービス等）であり、リクエストボディではないため request 候補にしない。
+      if (isDependencyParameter(param)) {
+        continue;
+      }
       const annotation = parameterAnnotationName(param);
       const candidate = candidateFor("request", annotation, handlerQualname, table);
       if (candidate !== null) {
@@ -181,6 +186,35 @@ function handlerRefCandidates(funcNode: Node, table: Map<string, Binding>): Sche
   }
 
   return candidates;
+}
+
+/** FastAPI の依存性注入マーカー（デフォルト値の呼び出し関数名）。 */
+const DEPENDENCY_MARKERS = new Set<string>(["Depends", "Security"]);
+
+/**
+ * 引数が `= Depends(...)` / `= Security(...)` を持つ依存性注入かを判定する。
+ * `typed_default_parameter` の `value`（デフォルト値）が当該マーカーの呼び出しなら true。
+ * `Depends(...)`（identifier）と `fastapi.Depends(...)`（attribute）の双方を認識する。
+ */
+function isDependencyParameter(param: Node): boolean {
+  if (param.type !== "typed_default_parameter") {
+    return false;
+  }
+  const value = fieldChild(param, "value");
+  if (value === null || value.type !== "call") {
+    return false;
+  }
+  const fn = fieldChild(value, "function");
+  if (fn === null) {
+    return false;
+  }
+  const name =
+    fn.type === "attribute"
+      ? (fieldChild(fn, "attribute")?.text ?? null)
+      : fn.type === "identifier"
+        ? fn.text
+        : null;
+  return name !== null && DEPENDENCY_MARKERS.has(name);
 }
 
 /**

@@ -104,6 +104,7 @@ const cytoscapeMock = vi.fn((options: { elements: { data: { id: string } }[] }) 
       addClass: vi.fn(),
       removeClass: vi.fn(),
       unselect: vi.fn(),
+      boundingBox: vi.fn(() => ({ x1: 0, y1: 0, x2: 0, y2: 0, w: 0, h: 0 })),
     })),
     zoom: vi.fn(() => 1),
     pan: vi.fn(() => ({ x: 0, y: 0 })),
@@ -112,9 +113,15 @@ const cytoscapeMock = vi.fn((options: { elements: { data: { id: string } }[] }) 
 });
 
 let capturedOnDepthChange: ((depth: "route" | "file" | "function") => void) | undefined;
+let capturedOnReanalyze: (() => void) | undefined;
 const createDepthSwitchControlMock = vi.fn(
-  (_container: HTMLElement, onDepthChange: (depth: "route" | "file" | "function") => void) => {
+  (
+    _container: HTMLElement,
+    onDepthChange: (depth: "route" | "file" | "function") => void,
+    onReanalyze?: () => void,
+  ) => {
     capturedOnDepthChange = onDepthChange;
+    capturedOnReanalyze = onReanalyze;
   },
 );
 
@@ -181,6 +188,7 @@ describe("webview/main.ts", () => {
     cyGetElementByIdMock.mockClear();
     createDepthSwitchControlMock.mockClear();
     capturedOnDepthChange = undefined;
+    capturedOnReanalyze = undefined;
     document.body.innerHTML = '<div id="app"></div>';
   });
 
@@ -189,6 +197,16 @@ describe("webview/main.ts", () => {
 
     expect(acquireVsCodeApiMock).toHaveBeenCalledTimes(1);
     expect(postMessageMock).toHaveBeenCalledWith({ type: "ready" });
+  });
+
+  it("posts a reanalyze message when the reanalyze control is triggered", async () => {
+    await import("../main.js");
+    expect(capturedOnReanalyze).toBeDefined();
+
+    postMessageMock.mockClear();
+    capturedOnReanalyze?.();
+
+    expect(postMessageMock).toHaveBeenCalledWith({ type: "reanalyze" });
   });
 
   it("builds Cytoscape elements derived from projectDepth's default-depth output on linkageData", async () => {

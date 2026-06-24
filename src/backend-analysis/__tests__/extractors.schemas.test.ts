@@ -144,4 +144,23 @@ describe("extractSchemaInfo", () => {
       location: { file: "schemas.py", line: 18 },
     });
   });
+
+  it("excludes Depends()-injected parameters from request candidates (DB session/service/query params)", async () => {
+    const source = [
+      "from fastapi import APIRouter, Depends",
+      "from models import TDevice",
+      "router = APIRouter()",
+      '@router.post("/")',
+      "def store(device: TDevice, session: Session = Depends(get_session), params: SearchQueryParams = Depends(), service: StoreService = Depends(get_store_service)):",
+      "    return None",
+      "",
+    ].join("\n");
+    const tree = await parse(source);
+    const result = extractSchemaInfo(tree, "api.py");
+
+    const reqs = pick(result.refCandidates, "store", "request");
+    // 本物のリクエストボディ device:TDevice のみ。session/params/service は Depends 注入で除外。
+    expect(reqs.map((c) => c.className)).toEqual(["TDevice"]);
+    expect(reqs[0]?.importedQualifiedName).toContain("TDevice");
+  });
 });

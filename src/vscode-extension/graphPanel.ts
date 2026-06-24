@@ -62,6 +62,9 @@ function createPanel(
   const panel = vscode.window.createWebviewPanel(VIEW_TYPE, PANEL_TITLE, vscode.ViewColumn.One, {
     enableScripts: true,
     localResourceRoots: [localResourceRoot],
+    // タブを別エディタに移して戻ってもWebviewのDOM/JS状態（選択中の粒度タブ・ズーム・検索など）を
+    // 破棄せず保持する。これが無いと裏に回るたびにWebviewが再生成され、粒度タブが既定へ戻る。
+    retainContextWhenHidden: true,
   });
 
   panel.webview.html = buildWebviewHtml(panel.webview, context.extensionUri);
@@ -79,6 +82,11 @@ function createPanel(
       if (latestOutput) {
         onCopyLinked?.(latestOutput, message.payload);
       }
+      return;
+    }
+    if (message.type === "reanalyze") {
+      // Webview の再解析ボタン → 既存の reanalyze コマンドへ委譲（解析後 postLinkageUpdate で反映）。
+      void vscode.commands.executeCommand("apivista.reanalyze");
     }
   });
 

@@ -6,6 +6,8 @@ import type { Tree } from "web-tree-sitter";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { extractFile } from "../extractFile.js";
+import { buildSymbolTable } from "../symbolTable.js";
+import type { Binding } from "../symbolTable.js";
 import type { FileExtractionResult } from "../extractFile.js";
 import type { ModuleMap } from "../moduleMap.js";
 import { getPythonParser, resetPythonParser } from "../parser.js";
@@ -14,6 +16,9 @@ import { WarningCollector } from "../warnings.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SAMPLE_APP = join(here, "..", "..", "..", "tests", "fixtures", "sample_app");
+
+/** クロスファイル基底解決を使わないテスト用の空 symbolTables（同一ファイル/import 由来 ref のみ）。 */
+const NO_SYMBOL_TABLES = new Map<string, Map<string, Binding>>();
 
 async function parseFixture(relPath: string): Promise<Tree> {
   const source = readFileSync(join(SAMPLE_APP, relPath), "utf8");
@@ -80,7 +85,7 @@ describe("resolveSchemaRefs", () => {
     const perFile = await buildSamplePerFile(collector);
     const map = sampleModuleMap();
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     const refs = result.get("sample_app.routers.users:get_user");
     expect(refs).toEqual([
@@ -97,7 +102,7 @@ describe("resolveSchemaRefs", () => {
     const perFile = await buildSamplePerFile(collector);
     const map = sampleModuleMap();
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     const refs = result.get("sample_app.routers.users:create_user") ?? [];
     expect(refs).toContainEqual({
@@ -118,7 +123,7 @@ describe("resolveSchemaRefs", () => {
     const perFile = await buildSamplePerFile(collector);
     const map = sampleModuleMap();
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     const refs = result.get("sample_app.routers.items:get_item");
     expect(refs).toEqual([
@@ -135,7 +140,7 @@ describe("resolveSchemaRefs", () => {
     const perFile = await buildSamplePerFile(collector);
     const map = sampleModuleMap();
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     const refs = result.get("sample_app.routers.items:create_item") ?? [];
     expect(refs).toContainEqual({
@@ -156,7 +161,7 @@ describe("resolveSchemaRefs", () => {
     const perFile = await buildSamplePerFile(collector);
     const map = sampleModuleMap();
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     // get_dynamic_item returns `dict` and has only `item_id: int` -> no candidates.
     expect(result.has("sample_app.routers.items:get_dynamic_item")).toBe(false);
@@ -170,7 +175,7 @@ describe("resolveSchemaRefs", () => {
     const map = sampleModuleMap();
 
     const resolveCollector = new WarningCollector();
-    resolveSchemaRefs(perFile, map, resolveCollector);
+    resolveSchemaRefs(perFile, map, resolveCollector, NO_SYMBOL_TABLES);
 
     expect(resolveCollector.warnings).toEqual([]);
   });
@@ -186,7 +191,12 @@ describe("resolveSchemaRefs", () => {
     for (const [m, p] of moduleToPath) {
       pathToModule.set(p, m);
     }
-    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
+    const map: ModuleMap = {
+      moduleToPath,
+      pathToModule,
+      exportedNames: new Map(),
+      parsedFiles: new Map(),
+    };
 
     const modelsSrc = [
       "from pydantic import BaseModel",
@@ -218,7 +228,7 @@ describe("resolveSchemaRefs", () => {
     perFile.set("models.py", extractFile("models.py", await parseSource(modelsSrc), collector));
     perFile.set("api.py", extractFile("api.py", await parseSource(apiSrc), collector));
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
     const refs = result.get("pkg.api:handler") ?? [];
 
     expect(refs).toContainEqual({
@@ -245,7 +255,12 @@ describe("resolveSchemaRefs", () => {
     for (const [m, p] of moduleToPath) {
       pathToModule.set(p, m);
     }
-    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
+    const map: ModuleMap = {
+      moduleToPath,
+      pathToModule,
+      exportedNames: new Map(),
+      parsedFiles: new Map(),
+    };
 
     const modelsSrc = ["class Plain:", "    x: int", ""].join("\n");
     const apiSrc = [
@@ -266,7 +281,7 @@ describe("resolveSchemaRefs", () => {
     perFile.set("models.py", extractFile("models.py", await parseSource(modelsSrc), collector));
     perFile.set("api.py", extractFile("api.py", await parseSource(apiSrc), collector));
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     // No SchemaReference produced for the non-BaseModel class.
     expect(result.get("pkg.api:handler") ?? []).toEqual([]);
@@ -285,7 +300,12 @@ describe("resolveSchemaRefs", () => {
     for (const [m, p] of moduleToPath) {
       pathToModule.set(p, m);
     }
-    const map: ModuleMap = { moduleToPath, pathToModule, exportedNames: new Map(), parsedFiles: new Map() };
+    const map: ModuleMap = {
+      moduleToPath,
+      pathToModule,
+      exportedNames: new Map(),
+      parsedFiles: new Map(),
+    };
 
     // Imports `Ghost` from a module that is not in the perFile/registry.
     const apiSrc = [
@@ -305,9 +325,105 @@ describe("resolveSchemaRefs", () => {
     const perFile = new Map<string, FileExtractionResult>();
     perFile.set("api.py", extractFile("api.py", await parseSource(apiSrc), collector));
 
-    const result = resolveSchemaRefs(perFile, map, collector);
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
 
     expect(result.get("pkg.api:handler") ?? []).toEqual([]);
     expect(collector.warnings.some((w) => w.target === "pkg.api:handler")).toBe(true);
+  });
+
+  it("accepts SQLModel-based classes as schema references (transitive SQLModel base)", async () => {
+    const source = [
+      "from fastapi import APIRouter",
+      "from sqlmodel import SQLModel",
+      "router = APIRouter()",
+      "class TDeviceBase(SQLModel):",
+      "    pass",
+      "class TDevice(TDeviceBase, table=True):",
+      "    pass",
+      '@router.post("/")',
+      "def store(device: TDevice):",
+      "    return None",
+      "",
+    ].join("\n");
+
+    const collector = new WarningCollector();
+    const perFile = new Map<string, FileExtractionResult>();
+    perFile.set("api.py", extractFile("api.py", await parseSource(source), collector));
+    const map: ModuleMap = {
+      moduleToPath: new Map([["app.api", "api.py"]]),
+      pathToModule: new Map([["api.py", "app.api"]]),
+      exportedNames: new Map(),
+      parsedFiles: new Map(),
+    };
+
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
+
+    expect(result.get("app.api:store") ?? []).toContainEqual({
+      className: "TDevice",
+      location: { file: "api.py", line: 6 },
+      role: "request",
+    });
+    // SQLModel 派生は警告なく確定する。
+    expect(collector.warnings).toHaveLength(0);
+  });
+
+  it("resolves a shared base class defined in another file (cross-file BaseSchema(BaseModel))", async () => {
+    const commonSrc = [
+      "from pydantic import BaseModel",
+      "",
+      "class BaseSchema(BaseModel):",
+      "    pass",
+      "",
+    ].join("\n");
+    const shopSrc = [
+      "from fastapi import APIRouter",
+      "from schemas.common import BaseSchema",
+      "router = APIRouter()",
+      "class ShopBase(BaseSchema):",
+      "    pass",
+      "class ShopResponse(ShopBase):",
+      "    pass",
+      '@router.get("/{id}")',
+      "def show(id: int) -> ShopResponse:",
+      "    return None",
+      "",
+    ].join("\n");
+
+    const collector = new WarningCollector();
+    const commonTree = await parseSource(commonSrc);
+    const shopTree = await parseSource(shopSrc);
+    const perFile = new Map<string, FileExtractionResult>();
+    perFile.set("schemas/common.py", extractFile("schemas/common.py", commonTree, collector));
+    perFile.set("api/shop.py", extractFile("api/shop.py", shopTree, collector));
+
+    const symbolTables = new Map<string, Map<string, Binding>>([
+      ["schemas/common.py", buildSymbolTable(commonTree, "schemas/common.py")],
+      ["api/shop.py", buildSymbolTable(shopTree, "api/shop.py")],
+    ]);
+
+    const moduleToPath = new Map<string, string>([
+      ["app.schemas.common", "schemas/common.py"],
+      ["app.api.shop", "api/shop.py"],
+    ]);
+    const pathToModule = new Map<string, string>();
+    for (const [m, p] of moduleToPath) {
+      pathToModule.set(p, m);
+    }
+    const map: ModuleMap = {
+      moduleToPath,
+      pathToModule,
+      exportedNames: new Map(),
+      parsedFiles: new Map(),
+    };
+
+    const result = resolveSchemaRefs(perFile, map, collector, symbolTables);
+
+    // ShopResponse → ShopBase → BaseSchema(別ファイル) → BaseModel まで辿れて確定する。
+    expect(result.get("app.api.shop:show") ?? []).toContainEqual({
+      className: "ShopResponse",
+      location: { file: "api/shop.py", line: 6 },
+      role: "response",
+    });
+    expect(collector.warnings).toHaveLength(0);
   });
 });

@@ -36,6 +36,7 @@ const createWebviewPanelMock = vi.fn();
 const showErrorMessageMock = vi.fn();
 const joinPathMock = vi.fn();
 const buildWebviewHtmlMock = vi.fn();
+const executeCommandMock = vi.fn();
 const sourceJumpRevealMock = vi.fn();
 
 vi.mock("vscode", () => ({
@@ -47,6 +48,9 @@ vi.mock("vscode", () => ({
     joinPath: joinPathMock,
   },
   ViewColumn: { One: 1 },
+  commands: {
+    executeCommand: executeCommandMock,
+  },
 }));
 
 vi.mock("../webviewHtml.js", () => ({
@@ -219,6 +223,34 @@ describe("graphPanel.showOrReveal", () => {
 
     expect(onCopyLinked).toHaveBeenCalledTimes(1);
     expect(onCopyLinked).toHaveBeenCalledWith(initialOutput, payload);
+  });
+
+  it("Webviewから'reanalyze'メッセージを受信すると、apivista.reanalyzeコマンドを実行する", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+
+    const { showOrReveal } = await import("../graphPanel.js");
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, makeLinkageOutput());
+
+    const onMessageHandler = panel.webview.onDidReceiveMessage.mock.calls[0][0] as (
+      message: unknown,
+    ) => void;
+    onMessageHandler({ type: "reanalyze" });
+
+    expect(executeCommandMock).toHaveBeenCalledWith("apivista.reanalyze");
+  });
+
+  it("createWebviewPanelのoptionsはretainContextWhenHiddenを有効にする", async () => {
+    const panel = makeFakePanel();
+    createWebviewPanelMock.mockReturnValue(panel);
+
+    const { showOrReveal } = await import("../graphPanel.js");
+    showOrReveal({ extensionUri: EXTENSION_URI } as never, makeLinkageOutput());
+
+    const options = createWebviewPanelMock.mock.calls[0][3] as {
+      retainContextWhenHidden?: boolean;
+    };
+    expect(options.retainContextWhenHidden).toBe(true);
   });
 
   it("postLinkageUpdate後の'copyLinked'では、onCopyLinkedに更新後のoutputが渡る", async () => {

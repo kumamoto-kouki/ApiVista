@@ -30,6 +30,7 @@ const DEPTH_OPTIONS: ReadonlyArray<{ value: Depth; label: string }> = [
 export function createDepthSwitchControl(
   container: HTMLElement,
   onDepthChange: (depth: Depth) => void,
+  onReanalyze?: () => void,
 ): void {
   const toolbar = document.createElement("div");
   toolbar.style.cssText = [
@@ -105,14 +106,36 @@ export function createDepthSwitchControl(
     tabGroup.appendChild(btn);
   }
 
-  // 右端の説明ラベル
+  // 右端: 説明ラベル + 再解析ボタン
+  const right = document.createElement("div");
+  right.style.cssText = "display:flex;align-items:center;gap:10px;";
+
   const hint = document.createElement("span");
   hint.textContent = "矢印 = 方向 (source → target)";
   hint.style.cssText =
     "font-size:10px;color:var(--vscode-descriptionForeground,#9d9d9d);white-space:nowrap;";
+  right.appendChild(hint);
+
+  if (onReanalyze !== undefined) {
+    const reanalyzeBtn = document.createElement("button");
+    reanalyzeBtn.textContent = "⟳ 再解析";
+    reanalyzeBtn.title = "対象プロジェクトを再解析する";
+    reanalyzeBtn.style.cssText = [
+      "padding:3px 10px",
+      "font-size:11px",
+      "border:1px solid var(--vscode-button-border,transparent)",
+      "border-radius:4px",
+      "cursor:pointer",
+      "background:var(--vscode-button-secondaryBackground,#313131)",
+      "color:var(--vscode-button-secondaryForeground,#cccccc)",
+      "white-space:nowrap",
+    ].join(";");
+    reanalyzeBtn.addEventListener("click", () => onReanalyze());
+    right.appendChild(reanalyzeBtn);
+  }
 
   toolbar.appendChild(title);
   toolbar.appendChild(tabGroup);
-  toolbar.appendChild(hint);
+  toolbar.appendChild(right);
   container.appendChild(toolbar);
 }

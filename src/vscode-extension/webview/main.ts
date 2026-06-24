@@ -866,6 +866,24 @@ function handleNodeTap(_node: GraphNode): void {
   // Cytoscape fallback tap: カード上のクリックは [data-code-link] 要素が処理するため何もしない
 }
 
+/**
+ * 初期表示を原寸(zoom=1)・コンテンツ最上部に固定する。
+ * 枠が多くても fit による縮小をせず、最上部の枠が見える位置から原寸で表示する。
+ * 横方向はコンテンツが画面に収まれば中央寄せ、収まらなければ最左（+余白）に寄せる。
+ */
+function applyInitialView(): void {
+  if (!cy) return;
+  const VIEW_PADDING = 50;
+  cy.zoom(1);
+  const bb = cy.elements().boundingBox();
+  const rect = graphContainer.getBoundingClientRect();
+  // 縦: コンテンツ最上部(bb.y1)を画面上端(+余白)へ。rendered_y = model_y*zoom + panY（zoom=1）。
+  const panY = VIEW_PADDING - bb.y1;
+  // 横: 収まるなら中央、収まらないなら最左。
+  const panX = bb.w <= rect.width ? (rect.width - bb.w) / 2 - bb.x1 : VIEW_PADDING - bb.x1;
+  cy.pan({ x: panX, y: panY });
+}
+
 function renderGraph(): void {
   if (!currentOutput) return;
 
@@ -904,8 +922,10 @@ function renderGraph(): void {
     minZoom: MIN_ZOOM,
     maxZoom: MAX_ZOOM,
     layout: {
+      // fit はしない（枠が多いと縮小され中ほどが表示されてしまうため）。初期表示は applyInitialView で
+      // 常に原寸(zoom=1)・コンテンツ最上部に固定する。
       name: "preset",
-      fit: true,
+      fit: false,
       padding: 50,
     },
     // ホイールズーム/パンは下の手動ハンドラで実装する。Cytoscape のホイールズームは
@@ -916,6 +936,9 @@ function renderGraph(): void {
     autoungrabify: true,
     boxSelectionEnabled: false,
   });
+
+  // 初期表示を原寸(zoom=1)・コンテンツ最上部に固定する（枠の数に依らずトップから原寸で見せる）。
+  applyInitialView();
 
   // ゾーンは cy 生成後に追加してキャンバス上に表示（z-index:2 > canvas:auto）
   renderBackgroundZones(frontendCount, backendCount);
@@ -976,10 +999,14 @@ window.addEventListener("message", (event: MessageEvent<HostToWebviewMessage>) =
   }
 });
 
-createDepthSwitchControl(depthSwitchContainer, (depth) => {
-  currentDepth = depth;
-  renderGraph();
-});
+createDepthSwitchControl(
+  depthSwitchContainer,
+  (depth) => {
+    currentDepth = depth;
+    renderGraph();
+  },
+  () => vscodeApi.postMessage({ type: "reanalyze" }),
+);
 
 renderLegend(legendContainer);
 

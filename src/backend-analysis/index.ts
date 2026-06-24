@@ -147,7 +147,7 @@ export async function analyzeBackend(
   const files = deriveFileGraph(functions);
 
   // Pass2c: クロスファイルのスキーマ参照解決。
-  const schemaRefsByHandler = resolveSchemaRefs(perFile, map, collector);
+  const schemaRefsByHandler = resolveSchemaRefs(perFile, map, collector, symbolTables);
   onProgress?.(`バックエンド Pass2 完了: ${routes.length} ルートを解決`);
 
   // Assembler: 単一の AnalysisOutput に統合。
