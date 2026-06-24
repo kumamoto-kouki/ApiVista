@@ -19,7 +19,7 @@ import { LEGEND_LANGUAGES } from "./languageStyle.js";
 import { createNodeCard } from "./nodeCardRenderer.js";
 import { createSearchBox } from "./searchBox.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
-import { matchWarningNodeIds, projectDepth } from "./projectDepth.js";
+import { filterConnectedToLinkage, matchWarningNodeIds, projectDepth } from "./projectDepth.js";
 import {
   clearLinkageLines,
   clearTreeGuides,
@@ -91,6 +91,8 @@ appRoot.appendChild(orphanSection);
 
 let currentOutput: LinkageOutput | undefined;
 let currentDepth: Depth = DEFAULT_DEPTH;
+// 「連携のみ」表示か「すべて表示」か。既定は連携のみ（ルート連携ビューを見やすく保つ）。
+let showConnectedOnly = true;
 let cy: Core | undefined;
 
 // ─────────────────────────────────────────
@@ -458,11 +460,15 @@ function computeLayout(
     return edges.filter((e) => e.kind === "structural" && ids.has(e.source) && ids.has(e.target));
   }
 
-  /** structural エッジを優先した深さ優先訪問順（primaryParentOf が渡された場合は主親のみ辿る） */
+  /**
+   * structural エッジを優先した深さ優先訪問順（primaryParentOf が渡された場合は主親のみ辿る）。
+   * `rootKey` が渡された場合は、ルート（部分木）を昇順キーで並べてから訪問する（ペア整列用）。
+   */
   function treeOrder(
     group: GraphNode[],
     structEdges: GraphEdge[],
     primaryParentOf?: Map<string, string>,
+    rootKey?: (id: string) => number,
   ): GraphNode[] {
     const children = new Set(structEdges.map((e) => e.target));
     const roots = group.filter((n) => !children.has(n.id));
@@ -484,7 +490,9 @@ function computeLayout(
       }
     }
 
-    for (const r of roots) visit(r.id);
+    const orderedRoots =
+      rootKey === undefined ? roots : [...roots].sort((a, b) => rootKey(a.id) - rootKey(b.id));
+    for (const r of orderedRoots) visit(r.id);
     for (const n of group) {
       if (!visited.has(n.id)) result.push(n);
     }
@@ -519,11 +527,11 @@ function computeLayout(
   const depths = new Map<string, number>();
   const primaryParentOf = new Map<string, string>();
 
-  function layoutColumn(group: GraphNode[], x: number): void {
+  function layoutColumn(group: GraphNode[], x: number, rootKey?: (id: string) => number): void {
     const se = groupStructEdges(group);
     const { depthMap: colDepths, parentOf: colParentOf } = calcDepths(group, se);
     for (const [k, v] of colParentOf) primaryParentOf.set(k, v);
-    const ordered = treeOrder(group, se, colParentOf);
+    const ordered = treeOrder(group, se, colParentOf, rootKey);
 
     let y = TOP_Y + NODE_CARD_H / 2;
     for (const node of ordered) {
@@ -535,9 +543,73 @@ function computeLayout(
     }
   }
 
-  layoutColumn(frontendNodes, LEFT_X);
+  // バックエンドを先に配置し、その Y を基準にフロントの並び順を整列する（ペア整列）。
   layoutColumn(backendNodes, RIGHT_X);
+  const frontendRootKey = buildFrontendAlignmentKey(frontendNodes, edges, positions);
+  layoutColumn(frontendNodes, LEFT_X, frontendRootKey);
   return { positions, depths, primaryParentOf };
+}
+
+/**
+ * ペア整列用のルート並び替えキーを作る。
+ *
+ * 各フロントノードに「連携相手のバックエンドノードの Y 平均」を割り当て（直接 linkage が無いノードは
+ * structural 隣接から伝播）、その値が小さい順にフロントの部分木（生成クライアントの Factory→Fp→
+ * ParamCreator 等の鎖）を並べる。これにより連携する枠が相手と近い高さに並び、連携線が短く＆交差が減る。
+ * 連携を持たない孤立ノードは末尾（Infinity）に置く。
+ */
+function buildFrontendAlignmentKey(
+  frontendNodes: GraphNode[],
+  edges: GraphEdge[],
+  backendPositions: Record<string, { x: number; y: number }>,
+): (id: string) => number {
+  const frontendIds = new Set(frontendNodes.map((n) => n.id));
+
+  // 1. 直接 linkage を持つフロントノード → 連携相手バックエンドの Y 平均。
+  const sum = new Map<string, { total: number; count: number }>();
+  for (const edge of edges) {
+    if (edge.kind !== "linkage") continue;
+    for (const [fe, be] of [
+      [edge.source, edge.target],
+      [edge.target, edge.source],
+    ] as const) {
+      if (!frontendIds.has(fe)) continue;
+      const by = backendPositions[be]?.y;
+      if (by === undefined) continue;
+      const acc = sum.get(fe) ?? { total: 0, count: 0 };
+      acc.total += by;
+      acc.count += 1;
+      sum.set(fe, acc);
+    }
+  }
+  const targetY = new Map<string, number>();
+  for (const [id, { total, count }] of sum) targetY.set(id, total / count);
+
+  // 2. structural 隣接（無向）で targetY を伝播（鎖の祖先/子孫へ波及）。
+  const adjacency = new Map<string, Set<string>>();
+  const link = (a: string, b: string): void => {
+    if (!frontendIds.has(a) || !frontendIds.has(b)) return;
+    (adjacency.get(a) ?? adjacency.set(a, new Set()).get(a)!).add(b);
+  };
+  for (const edge of edges) {
+    if (edge.kind === "structural") {
+      link(edge.source, edge.target);
+      link(edge.target, edge.source);
+    }
+  }
+  const queue = [...targetY.keys()];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const value = targetY.get(id)!;
+    for (const neighbor of adjacency.get(id) ?? []) {
+      if (!targetY.has(neighbor)) {
+        targetY.set(neighbor, value);
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  return (id: string): number => targetY.get(id) ?? Number.POSITIVE_INFINITY;
 }
 
 // ─────────────────────────────────────────
@@ -890,7 +962,11 @@ function renderGraph(): void {
   clearWarningOverlays();
   clearNodeCards();
 
-  const { nodes, edges } = projectDepth(currentOutput, currentDepth);
+  const projected = projectDepth(currentOutput, currentDepth);
+  // 「連携のみ」表示時は、フロント↔バック連携に到達しない孤立ノード（多数の UI 部品）を除外する。
+  const { nodes, edges } = showConnectedOnly
+    ? filterConnectedToLinkage(projected.nodes, projected.edges)
+    : projected;
   const frontendCount = nodes.filter((n) => n.side === "frontend").length;
   const backendCount = nodes.filter((n) => n.side === "backend").length;
 
@@ -1006,6 +1082,13 @@ createDepthSwitchControl(
     renderGraph();
   },
   () => vscodeApi.postMessage({ type: "reanalyze" }),
+  {
+    initial: showConnectedOnly,
+    onToggle: (connectedOnly) => {
+      showConnectedOnly = connectedOnly;
+      renderGraph();
+    },
+  },
 );
 
 renderLegend(legendContainer);

@@ -275,6 +275,56 @@ export function projectDepth(
 }
 
 /**
+ * フロント↔バック連携に関与するノードのみへ絞り込む（「連携のみ」表示用）。
+ *
+ * `linkage` エッジの端点を起点に、全エッジ（structural も含む）を無向で辿って到達できるノードだけ残す。
+ * これにより「呼び出し元コンポーネント → composable → 生成クライアント → ルート」のような連携の鎖は丸ごと
+ * 残しつつ、どのルートにも到達しない孤立した UI 部品（多数の `0 接続` ノード）を除外する。
+ * 残ったノードの両端を持つエッジのみ返す（孤立参照を作らない）。
+ */
+export function filterConnectedToLinkage(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const adjacency = new Map<string, Set<string>>();
+  const link = (a: string, b: string): void => {
+    (adjacency.get(a) ?? adjacency.set(a, new Set()).get(a)!).add(b);
+  };
+  for (const edge of edges) {
+    link(edge.source, edge.target);
+    link(edge.target, edge.source);
+  }
+
+  const keep = new Set<string>();
+  const queue: string[] = [];
+  for (const edge of edges) {
+    if (edge.kind !== "linkage") {
+      continue;
+    }
+    for (const endpoint of [edge.source, edge.target]) {
+      if (!keep.has(endpoint)) {
+        keep.add(endpoint);
+        queue.push(endpoint);
+      }
+    }
+  }
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const neighbor of adjacency.get(id) ?? []) {
+      if (!keep.has(neighbor)) {
+        keep.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  return {
+    nodes: nodes.filter((n) => keep.has(n.id)),
+    edges: edges.filter((e) => keep.has(e.source) && keep.has(e.target)),
+  };
+}
+
+/**
  * `Warning.target`(route/apiCallの`path`/`urlPattern`、もしくはファイルパス)に対応する
  * `GraphNode`のid集合を返す(警告一覧ホバー時のグラフ強調表示用)。
  *

@@ -15,6 +15,7 @@ import type {
   RouteRef,
 } from "../../../route-linkage/models.js";
 import {
+  filterConnectedToLinkage,
   findMatchingNodeIds,
   matchWarningNodeIds,
   projectDepth,
@@ -489,5 +490,47 @@ describe("matchWarningNodeIds", () => {
       nodes,
     );
     expect(ids).toEqual(["file:1"]);
+  });
+});
+
+describe("filterConnectedToLinkage", () => {
+  function fnNode(id: string, side: "frontend" | "backend"): GraphNode {
+    return {
+      id,
+      kind: "function",
+      side,
+      label: id,
+      unmatched: false,
+      sourceLocation: { file: `${id}.ts`, line: 1 },
+      functionId: id,
+    };
+  }
+
+  it("keeps the chain reachable from a linkage edge and drops isolated nodes", () => {
+    // 連携の鎖: page -> client(front) =linkage=> route(back)。 island は孤立。
+    const nodes: GraphNode[] = [
+      fnNode("page", "frontend"),
+      fnNode("client", "frontend"),
+      fnNode("route", "backend"),
+      fnNode("islandA", "frontend"),
+      fnNode("islandB", "frontend"),
+    ];
+    const edges: GraphEdge[] = [
+      { id: "s1", source: "page", target: "client", kind: "structural" },
+      { id: "l1", source: "client", target: "route", kind: "linkage" },
+      { id: "s2", source: "islandA", target: "islandB", kind: "structural" },
+    ];
+
+    const result = filterConnectedToLinkage(nodes, edges);
+
+    expect(result.nodes.map((n) => n.id).sort()).toEqual(["client", "page", "route"]);
+    // island の structural エッジは除外、連携の鎖のエッジは保持。
+    expect(result.edges.map((e) => e.id).sort()).toEqual(["l1", "s1"]);
+  });
+
+  it("returns empty when there are no linkage edges", () => {
+    const nodes: GraphNode[] = [fnNode("a", "frontend"), fnNode("b", "frontend")];
+    const edges: GraphEdge[] = [{ id: "s", source: "a", target: "b", kind: "structural" }];
+    expect(filterConnectedToLinkage(nodes, edges)).toEqual({ nodes: [], edges: [] });
   });
 });

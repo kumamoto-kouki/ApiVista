@@ -114,14 +114,19 @@ const cytoscapeMock = vi.fn((options: { elements: { data: { id: string } }[] }) 
 
 let capturedOnDepthChange: ((depth: "route" | "file" | "function") => void) | undefined;
 let capturedOnReanalyze: (() => void) | undefined;
+let capturedConnectedFilter:
+  | { initial: boolean; onToggle: (connectedOnly: boolean) => void }
+  | undefined;
 const createDepthSwitchControlMock = vi.fn(
   (
     _container: HTMLElement,
     onDepthChange: (depth: "route" | "file" | "function") => void,
     onReanalyze?: () => void,
+    connectedFilter?: { initial: boolean; onToggle: (connectedOnly: boolean) => void },
   ) => {
     capturedOnDepthChange = onDepthChange;
     capturedOnReanalyze = onReanalyze;
+    capturedConnectedFilter = connectedFilter;
   },
 );
 
@@ -189,6 +194,7 @@ describe("webview/main.ts", () => {
     createDepthSwitchControlMock.mockClear();
     capturedOnDepthChange = undefined;
     capturedOnReanalyze = undefined;
+    capturedConnectedFilter = undefined;
     document.body.innerHTML = '<div id="app"></div>';
   });
 
@@ -207,6 +213,18 @@ describe("webview/main.ts", () => {
     capturedOnReanalyze?.();
 
     expect(postMessageMock).toHaveBeenCalledWith({ type: "reanalyze" });
+  });
+
+  it("provides a connected-only filter (default on) and re-renders the graph on toggle", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    expect(capturedConnectedFilter?.initial).toBe(true);
+
+    const callsBefore = cytoscapeMock.mock.calls.length;
+    capturedConnectedFilter?.onToggle(false);
+    // トグルで再描画 → cytoscape が再生成される。
+    expect(cytoscapeMock.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
   it("builds Cytoscape elements derived from projectDepth's default-depth output on linkageData", async () => {

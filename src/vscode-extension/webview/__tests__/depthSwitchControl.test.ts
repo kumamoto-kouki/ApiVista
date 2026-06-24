@@ -118,4 +118,26 @@ describe("createDepthSwitchControl", () => {
     reanalyze?.click();
     expect(onReanalyze).toHaveBeenCalledTimes(1);
   });
+
+  it("renders a connected-only filter toggle that flips state and notifies on click", () => {
+    const container = createContainer();
+    const onToggle = vi.fn();
+    createDepthSwitchControl(container, vi.fn(), undefined, { initial: true, onToggle });
+
+    const findBtn = () =>
+      Array.from(container.querySelectorAll("button")).find(
+        (b) => b.textContent === "連携のみ" || b.textContent === "すべて表示",
+      );
+
+    // 初期は連携のみ。
+    expect(findBtn()?.textContent).toBe("連携のみ");
+
+    findBtn()?.click();
+    expect(onToggle).toHaveBeenNthCalledWith(1, false);
+    expect(findBtn()?.textContent).toBe("すべて表示");
+
+    findBtn()?.click();
+    expect(onToggle).toHaveBeenNthCalledWith(2, true);
+    expect(findBtn()?.textContent).toBe("連携のみ");
+  });
 });

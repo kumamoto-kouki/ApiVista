@@ -27,10 +27,18 @@ const DEPTH_OPTIONS: ReadonlyArray<{ value: Depth; label: string }> = [
  * Postconditions: `container`にツールバー要素が追加され、選択変更時に`onDepthChange`が呼ばれる。
  * Invariants: マウント直後は`onDepthChange`を呼び出さない。
  */
+export interface ConnectedFilterControl {
+  /** 初期状態（true = 連携のみ表示）。 */
+  initial: boolean;
+  /** トグル時に新しい状態（true = 連携のみ）を通知する。 */
+  onToggle: (connectedOnly: boolean) => void;
+}
+
 export function createDepthSwitchControl(
   container: HTMLElement,
   onDepthChange: (depth: Depth) => void,
   onReanalyze?: () => void,
+  connectedFilter?: ConnectedFilterControl,
 ): void {
   const toolbar = document.createElement("div");
   toolbar.style.cssText = [
@@ -115,6 +123,39 @@ export function createDepthSwitchControl(
   hint.style.cssText =
     "font-size:10px;color:var(--vscode-descriptionForeground,#9d9d9d);white-space:nowrap;";
   right.appendChild(hint);
+
+  if (connectedFilter !== undefined) {
+    let connectedOnly = connectedFilter.initial;
+    const filterBtn = document.createElement("button");
+    filterBtn.style.cssText = [
+      "padding:3px 10px",
+      "font-size:11px",
+      "border:1px solid var(--vscode-button-border,transparent)",
+      "border-radius:4px",
+      "cursor:pointer",
+      "white-space:nowrap",
+    ].join(";");
+    const applyState = (): void => {
+      // 連携のみ=アクティブ表示、すべて表示=非アクティブ表示。ラベルは現在の状態を表す。
+      filterBtn.textContent = connectedOnly ? "連携のみ" : "すべて表示";
+      filterBtn.title = connectedOnly
+        ? "連携に関与するノードのみ表示中（クリックで全ノード表示）"
+        : "全ノード表示中（クリックで連携のみ表示）";
+      filterBtn.style.background = connectedOnly
+        ? "var(--vscode-button-background,#0e639c)"
+        : "var(--vscode-button-secondaryBackground,#313131)";
+      filterBtn.style.color = connectedOnly
+        ? "var(--vscode-button-foreground,#ffffff)"
+        : "var(--vscode-button-secondaryForeground,#cccccc)";
+    };
+    applyState();
+    filterBtn.addEventListener("click", () => {
+      connectedOnly = !connectedOnly;
+      applyState();
+      connectedFilter.onToggle(connectedOnly);
+    });
+    right.appendChild(filterBtn);
+  }
 
   if (onReanalyze !== undefined) {
     const reanalyzeBtn = document.createElement("button");
