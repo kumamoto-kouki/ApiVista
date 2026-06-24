@@ -163,4 +163,14 @@ describe("extractSchemaInfo", () => {
     expect(reqs.map((c) => c.className)).toEqual(["TDevice"]);
     expect(reqs[0]?.importedQualifiedName).toContain("TDevice");
   });
+
+  it("captures the base name of a generic (subscript) base class (PageResponse[T] -> PageResponse)", async () => {
+    const source = ["class ListResponse(PageResponse[ItemResponse]):", "    pass", ""].join("\n");
+    const tree = await parse(source);
+    const result = extractSchemaInfo(tree, "schemas.py");
+
+    const cls = result.classDefinitions.find((d) => d.className === "ListResponse");
+    // ジェネリクス基底 PageResponse[ItemResponse] は土台名 PageResponse を採用する。
+    expect(cls?.baseClassNames).toEqual(["PageResponse"]);
+  });
 });

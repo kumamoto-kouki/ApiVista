@@ -426,4 +426,44 @@ describe("resolveSchemaRefs", () => {
     });
     expect(collector.warnings).toHaveLength(0);
   });
+
+  it("resolves a model inheriting a generic base (ListResponse(PageResponse[T]) -> BaseModel)", async () => {
+    const source = [
+      "from pydantic import BaseModel",
+      "from typing import Generic, TypeVar",
+      "from fastapi import APIRouter",
+      "router = APIRouter()",
+      'DataT = TypeVar("DataT")',
+      "class BaseSchema(BaseModel):",
+      "    pass",
+      "class PageResponse(BaseSchema, Generic[DataT]):",
+      "    pass",
+      "class ListResponse(PageResponse[int]):",
+      "    pass",
+      '@router.get("/")',
+      "def search() -> ListResponse:",
+      "    return None",
+      "",
+    ].join("\n");
+
+    const collector = new WarningCollector();
+    const perFile = new Map<string, FileExtractionResult>();
+    perFile.set("api.py", extractFile("api.py", await parseSource(source), collector));
+    const map: ModuleMap = {
+      moduleToPath: new Map([["app.api", "api.py"]]),
+      pathToModule: new Map([["api.py", "app.api"]]),
+      exportedNames: new Map(),
+      parsedFiles: new Map(),
+    };
+
+    const result = resolveSchemaRefs(perFile, map, collector, NO_SYMBOL_TABLES);
+
+    // ListResponse → PageResponse(ジェネリクス基底) → BaseSchema → BaseModel まで辿れて確定。
+    expect(result.get("app.api:search") ?? []).toContainEqual({
+      className: "ListResponse",
+      location: { file: "api.py", line: 10 },
+      role: "response",
+    });
+    expect(collector.warnings).toHaveLength(0);
+  });
 });

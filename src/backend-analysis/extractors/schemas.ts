@@ -286,8 +286,8 @@ function candidateFor(
 
 /**
  * `class_definition` から `ClassDefinition` を構築する。
- * 基底クラスは `argument_list` の `identifier`(単純名)/`attribute`(ドット式)のみ採用し、
- * subscript 等の複合基底はスキップする。位置は class 行。
+ * 基底クラスは `identifier`(単純名)/`attribute`(ドット式) に加え、ジェネリクス基底
+ * `subscript`(`PageResponse[T]` 等) は土台の名前(`PageResponse`)を採用する。位置は class 行。
  */
 function classDefinition(node: Node, fileId: string): ClassDefinition | null {
   const nameNode = fieldChild(node, "name");
@@ -301,8 +301,9 @@ function classDefinition(node: Node, fileId: string): ClassDefinition | null {
       if (base === null) {
         continue;
       }
-      if (base.type === "identifier" || base.type === "attribute") {
-        baseClassNames.push(base.text);
+      const name = baseClassName(base);
+      if (name !== null) {
+        baseClassNames.push(name);
       }
     }
   }
@@ -311,4 +312,24 @@ function classDefinition(node: Node, fileId: string): ClassDefinition | null {
     baseClassNames,
     location: toSourceLocation(fileId, node),
   };
+}
+
+/**
+ * 基底クラスノードから基底名を取り出す。
+ * - `identifier`(`Base`) / `attribute`(`mod.Base`) → そのテキスト。
+ * - `subscript`(`PageResponse[T]` のようなジェネリクス基底) → 土台(`value`)の名前。
+ *   `value` が identifier/attribute のときのみ採用（`list[int]`→`list` の要領で外側クラス名を取る）。
+ * - それ以外（複雑な式）→ null。
+ */
+function baseClassName(base: Node): string | null {
+  if (base.type === "identifier" || base.type === "attribute") {
+    return base.text;
+  }
+  if (base.type === "subscript") {
+    const value = fieldChild(base, "value");
+    if (value !== null && (value.type === "identifier" || value.type === "attribute")) {
+      return value.text;
+    }
+  }
+  return null;
 }
