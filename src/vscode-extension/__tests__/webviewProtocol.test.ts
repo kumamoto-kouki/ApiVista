@@ -30,6 +30,9 @@ function describeWebviewToHostMessage(message: WebviewToHostMessage): string {
     case "copyLinked":
       // "copyLinked" 分岐では payload.functionId にアクセス可能。
       return `copyLinked:${message.payload.functionId}`;
+    case "reanalyze":
+      // "reanalyze" 分岐では payload プロパティは存在しない。
+      return "reanalyze";
   }
 }
 

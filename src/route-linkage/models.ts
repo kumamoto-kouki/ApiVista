@@ -41,6 +41,8 @@ export interface SchemaReference {
   className: string;
   location: SourceLocation;
   role: "request" | "response";
+  /** モデルが SQLModel の DB テーブル（`table=True`）の場合の物理テーブル名。非テーブルは未設定。 */
+  tableName?: string;
 }
 
 /**

@@ -13,7 +13,7 @@
  */
 import type { Node, Tree } from "web-tree-sitter";
 
-import { computeQualname, fieldChild, toSourceLocation } from "../astUtils.js";
+import { computeQualname, fieldChild, stripStringLiteral, toSourceLocation } from "../astUtils.js";
 import type { SourceLocation } from "../models.js";
 import { buildSymbolTable, resolveName } from "../symbolTable.js";
 import type { Binding } from "../symbolTable.js";
@@ -37,6 +37,10 @@ export interface ClassDefinition {
   className: string;
   baseClassNames: string[];
   location: SourceLocation;
+  /** SQLModel の `class X(..., table=True)` のように DB テーブルを表すクラスか。 */
+  isTable: boolean;
+  /** `__tablename__ = "..."` で明示されたテーブル名。未指定（table クラスでもない）は null。 */
+  tableName: string | null;
 }
 
 /** `extractSchemaInfo` の戻り値（design.md SchemaExtractionResult 相当）。 */
@@ -295,10 +299,16 @@ function classDefinition(node: Node, fileId: string): ClassDefinition | null {
     return null;
   }
   const baseClassNames: string[] = [];
+  let isTable = false;
   const superclasses = fieldChild(node, "superclasses");
   if (superclasses !== null) {
     for (const base of superclasses.namedChildren) {
       if (base === null) {
+        continue;
+      }
+      // `table=True`（SQLModel の DB テーブル宣言）は keyword_argument として現れる。
+      if (base.type === "keyword_argument" && isTrueTableKeyword(base)) {
+        isTable = true;
         continue;
       }
       const name = baseClassName(base);
@@ -311,7 +321,39 @@ function classDefinition(node: Node, fileId: string): ClassDefinition | null {
     className: nameNode.text,
     baseClassNames,
     location: toSourceLocation(fileId, node),
+    isTable,
+    tableName: extractTableName(node),
   };
+}
+
+/** `table=True` の keyword_argument か判定する（`table=False` は除外）。 */
+function isTrueTableKeyword(keywordArg: Node): boolean {
+  const name = fieldChild(keywordArg, "name");
+  const value = fieldChild(keywordArg, "value");
+  return name?.text === "table" && value?.type === "true";
+}
+
+/** クラス本体の `__tablename__ = "..."` 代入からテーブル名を取り出す。無ければ null。 */
+function extractTableName(classNode: Node): string | null {
+  const body = fieldChild(classNode, "body");
+  if (body === null) {
+    return null;
+  }
+  for (const stmt of body.namedChildren) {
+    if (stmt === null || stmt.type !== "expression_statement") {
+      continue;
+    }
+    const assign = stmt.child(0);
+    if (assign === null || assign.type !== "assignment") {
+      continue;
+    }
+    const left = fieldChild(assign, "left");
+    const right = fieldChild(assign, "right");
+    if (left?.text === "__tablename__" && right !== null && right.type === "string") {
+      return stripStringLiteral(right.text);
+    }
+  }
+  return null;
 }
 
 /**

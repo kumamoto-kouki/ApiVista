@@ -4,13 +4,15 @@ import type { GraphNode } from "./projectDepth.js";
 import type { Theme } from "./themeManager.js";
 import { inferWarningKind, translateReason, WARNING_KIND_COLOR } from "./warningFormatter.js";
 
-export type NodeKind = "route" | "apiCall" | "file" | "function";
+export type NodeKind = "route" | "apiCall" | "file" | "function" | "model" | "table";
 
 export const NODE_LABELS: Record<NodeKind, string> = {
   route: "ルート",
   apiCall: "APIコール",
   file: "ファイル",
   function: "関数",
+  model: "モデル",
+  table: "DBテーブル",
 };
 
 const NODE_CARD_W = 200;

@@ -8,11 +8,13 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 
 **含まれるもの**
 
-- FastAPI(Python)のルート定義・関数呼び出しグラフの静的抽出
-- Nuxt.js(Vue/TS)のAPI呼び出し(`$fetch`/`useFetch`/axios等)・コンポーネント/関数呼び出しグラフの静的抽出
+- FastAPI(Python)のルート定義・関数呼び出しグラフの静的抽出。`include_router` の import エイリアス(`from x import router as r`)や f-string prefix(`prefix=f"{API_PREFIX}/devices"`)も解決
+- Nuxt.js(Vue/TS)のAPI呼び出しの静的抽出。`$fetch`/`useFetch`/axios の直接呼び出しに加え、**openapi-generator(typescript-axios)で生成された API クライアント**経由の呼び出しも検出
 - URLパス静的マッチング + OpenAPIスキーマ照合によるルート⇄フロントエンド呼び出しの連携構築
 - 3階層(ルート連携/ファイル単位/関数単位)のデータモデルと深度切り替え
-- VSCode拡張: ワークスペーススキャン、ファイル監視、コマンド、Webviewによるグラフ描画、ソースジャンプ
+- **ルート連携ビューでのデータモデル/DBテーブルの可視化**: ルートのリクエスト/レスポンスモデル(Pydantic/SQLModel)をノード化し、`table=True`(`__tablename__`)のモデルは DB テーブルノードへ「ルート → モデル → テーブル」と連結
+- **連携フィルタ**: 連携に関与するノードのみ表示する「連携のみ」と全ノードを表示する「すべて表示」をトグルで切替。連携するノードは相手と同じ高さに整列(ペア整列)
+- VSCode拡張: ワークスペーススキャン、ファイル監視、コマンド、Webviewによるグラフ描画、ソースジャンプ。依存/ビルドディレクトリ(`node_modules`/`.venv`/`__pycache__`等)は走査から除外
 - スポット解析: アクティブファイル(およびその属するディレクトリ)に絞った高速解析
 - 結果ディスクキャッシュ(stale-while-revalidate): 2回目以降は即時表示しつつバックグラウンドで再解析
 - 解析ログ(OutputChannel)と進行中のキャンセル、解析前提条件(WASM/`.py`存在/Pythonバージョン)のプリフライトチェック
@@ -41,19 +43,68 @@ ApiVistaは、モノレポ構成(`backend/` にFastAPI、`frontend/` にNuxt.js)
 
 ### グラフの操作
 
+ツールバー(上部)には深度切り替えタブ、「**連携のみ / すべて表示**」トグル、「**⟳ 再解析**」ボタンがあります。
+
 | 操作 | 動作 |
 | --- | --- |
-| 深度切り替えタブ | ルート連携 / ファイル単位 / 関数単位 の3階層を切り替え |
+| 深度切り替えタブ | ルート連携 / ファイル単位 / 関数単位 の3階層を切り替え(切替後も最後のタブを保持) |
+| **「連携のみ / すべて表示」トグル** | 連携に関与するノードのみ表示(既定)と、全ノード表示を切替。連携ペアは同じ高さに整列 |
+| **「⟳ 再解析」ボタン** | ワークスペースを再解析して最新状態に更新 |
 | 枠(ノード)を左クリック | 選択ハイライト |
 | 枠内のファイル名・関数名をクリック | 該当ソースへコードジャンプ(ホバーで下線表示) |
 | 枠にマウスオーバー | 連鎖する関数・連携線をハイライトし、それ以外を減光 |
 | **右ドラッグ** | グラフ全体をパン(表示位置の移動) |
-| ホイール | ズーム |
+| ホイール | ズーム(原寸を上限・極小を下限にクランプ。初期表示は常に原寸でコンテンツ最上部) |
 | **枠を右クリック →「連携関数をコピー」** | 連結する全関数(呼び出し連鎖+ルート連携)をMarkdownでクリップボードにコピー |
 
-枠の枠線・アイコンの色は対象ファイルの言語(Python / TypeScript / Vue / JavaScript)で色分けされます。未連携のルート/API呼び出しは破線枠で区別され、解析時の警告は対応する枠または画面下部にまとめて表示されます。
+ルート連携ビューでは、ルートに紐づく**データモデル**(「モデル」枠)と、`table=True` のモデルが対応する**DBテーブル**(「DBテーブル」枠)が「ルート → モデル → テーブル」として表示されます。
+
+枠の枠線・アイコンの色は対象ファイルの言語(Python / TypeScript / Vue / JavaScript)で色分けされます。未連携のルート/API呼び出しは破線枠で区別され、解析時の警告は対応する枠または画面下部(折りたたみ可能)にまとめて表示されます。
 
 > 注: 「連携関数をコピー」は事前に「ルート連携グラフを表示」で解析(キャッシュ生成)が必要です。
+
+## 解析結果の例(`../blog-api`)
+
+サンプルプロジェクト `../blog-api`(FastAPI + Nuxt.js)を解析した**ルート連携ビュー**の結果イメージです(実際の解析出力に基づく)。フロントエンドの API 呼び出し(composable)が、バックエンドの FastAPI ルートへ連携され、リクエストモデルがあれば「モデル」枠として連結されます。連携先の無いルート(`DELETE /api/posts/{post_id}`)は未連携として破線で区別されます。
+
+```mermaid
+graph LR
+    subgraph FE["フロントエンド(呼び出し元)"]
+        direction TB
+        F1["GET /api/posts<br/>composables/usePosts.ts:16"]
+        F2["GET /api/posts/{}<br/>composables/usePosts.ts:20"]
+        F3["POST /api/posts<br/>composables/usePosts.ts:24"]
+        F4["GET /api/users/me<br/>composables/useUser.ts:13"]
+        F5["PUT /api/users/me<br/>composables/useUser.ts:17"]
+    end
+    subgraph BE["バックエンド(FastAPI ルート)"]
+        direction TB
+        B1["GET /api/posts"]
+        B2["GET /api/posts/{post_id}"]
+        B3["POST /api/posts"]
+        B4["GET /api/users/me"]
+        B5["PUT /api/users/me"]
+        B6["DELETE /api/posts/{post_id}"]
+    end
+    subgraph MD["データモデル"]
+        direction TB
+        M1["PostCreate"]
+        M2["UserUpdate"]
+    end
+
+    F1 --> B1
+    F2 --> B2
+    F3 --> B3
+    F4 --> B4
+    F5 --> B5
+    B3 -. request .-> M1
+    B5 -. request .-> M2
+
+    class B6 unmatched;
+    classDef unmatched stroke-dasharray:5 5,stroke:#c08a3e,color:#c08a3e;
+```
+
+実際のグラフは VSCode の Webview 上に、言語別配色の枠・コードジャンプ・連携線のハイライト付きで描画されます。`../blog-api` の解析サマリ: バックエンド 6 ルート / フロントエンド 5 API 呼び出し / 連携 5 件 / 未連携ルート 1 件(警告 0 件)。
 
 ## 技術スタック
 

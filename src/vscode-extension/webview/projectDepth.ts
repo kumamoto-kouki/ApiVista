@@ -25,14 +25,20 @@
  * Postconditionを優先する防御的実装。route-linkage-engineの契約違反を検出する責務は
  * 本モジュールの範囲外)。
  */
-import type { ApiCallRef, LinkageOutput, RouteRef, Warning } from "../../route-linkage/models.js";
+import type {
+  ApiCallRef,
+  LinkageOutput,
+  RouteRef,
+  SchemaReference,
+  Warning,
+} from "../../route-linkage/models.js";
 
 export type Depth = "route" | "file" | "function";
 
 export interface GraphNode {
   /** 名前空間化済みID(route-linkage-engineのidをそのまま利用、route/apiCallは本関数が合成)。 */
   id: string;
-  kind: "route" | "apiCall" | "file" | "function";
+  kind: "route" | "apiCall" | "file" | "function" | "model" | "table";
   /** バックエンド/フロントエンドの区別（左右ゾーン配置に使用）。route=backend, apiCall=frontend固定。
    *  file/functionはroute-linkage-engineのLinkedFileNode.side/LinkedFunctionNode.sideを引き継ぐ。 */
   side: "backend" | "frontend";
@@ -75,9 +81,67 @@ function apiCallLabel(apiCall: ApiCallRef): string {
   return `${apiCall.method} ${apiCall.urlPattern}`;
 }
 
+/**
+ * `schemaRefs` から「データモデル」ノード、`table=True`(tableName あり) なら「DB テーブル」ノードを足し、
+ * `anchorId`（route / 関数 / ファイルのいずれかのノード）→ モデル → テーブル を structural エッジで連結する。
+ * 複数の起点で共有されるモデル/テーブルは id で重複排除する（同一テーブルは 1 ノードに集約）。
+ * 起点を差し替えるだけで route/file/function の各深度から再利用できる。
+ */
+function appendSchemaNodes(
+  anchorId: string,
+  schemaRefs: readonly SchemaReference[],
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  seenNodeIds: Set<string>,
+  seenEdgeIds: Set<string>,
+): void {
+  for (const ref of schemaRefs) {
+    const modelId = `model:${ref.className}:${ref.location.file}:${ref.location.line}`;
+    if (!seenNodeIds.has(modelId)) {
+      seenNodeIds.add(modelId);
+      nodes.push({
+        id: modelId,
+        kind: "model",
+        side: "backend",
+        label: ref.className,
+        unmatched: false,
+        sourceLocation: { ...ref.location },
+      });
+    }
+    const modelEdgeId = `schema:${anchorId}->${modelId}`;
+    if (!seenEdgeIds.has(modelEdgeId)) {
+      seenEdgeIds.add(modelEdgeId);
+      edges.push({ id: modelEdgeId, source: anchorId, target: modelId, kind: "structural" });
+    }
+
+    if (ref.tableName === undefined) {
+      continue;
+    }
+    const tableId = `table:${ref.tableName}`;
+    if (!seenNodeIds.has(tableId)) {
+      seenNodeIds.add(tableId);
+      nodes.push({
+        id: tableId,
+        kind: "table",
+        side: "backend",
+        label: ref.tableName,
+        unmatched: false,
+        sourceLocation: { ...ref.location },
+      });
+    }
+    const tableEdgeId = `tablemap:${modelId}->${tableId}`;
+    if (!seenEdgeIds.has(tableEdgeId)) {
+      seenEdgeIds.add(tableEdgeId);
+      edges.push({ id: tableEdgeId, source: modelId, target: tableId, kind: "structural" });
+    }
+  }
+}
+
 function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  const seenNodeIds = new Set<string>();
+  const seenEdgeIds = new Set<string>();
 
   for (const linkage of output.linkages) {
     const routeId = routeNodeId(linkage.route);
@@ -92,6 +156,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
       sourceLocation: { ...linkage.route.handler },
       functionId: linkage.route.entryFunctionId,
     });
+    appendSchemaNodes(routeId, linkage.route.schemaRefs, nodes, edges, seenNodeIds, seenEdgeIds);
     nodes.push({
       id: apiCallId,
       kind: "apiCall",
@@ -110,8 +175,9 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
   }
 
   for (const route of output.unmatchedRoutes) {
+    const routeId = routeNodeId(route);
     nodes.push({
-      id: routeNodeId(route),
+      id: routeId,
       kind: "route",
       side: "backend",
       label: routeLabel(route),
@@ -119,6 +185,7 @@ function projectRouteDepth(output: LinkageOutput): { nodes: GraphNode[]; edges: 
       sourceLocation: { ...route.handler },
       functionId: route.entryFunctionId,
     });
+    appendSchemaNodes(routeId, route.schemaRefs, nodes, edges, seenNodeIds, seenEdgeIds);
   }
 
   for (const apiCall of output.unmatchedApiCalls) {

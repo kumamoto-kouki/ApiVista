@@ -124,6 +124,78 @@ describe("projectDepth", () => {
       assertReferentialIntegrity(nodes, edges);
     });
 
+    it("adds data-model and DB-table nodes from route.schemaRefs (route -> model -> table)", () => {
+      const output = buildOutput({
+        linkages: [
+          {
+            route: route({
+              schemaRefs: [
+                {
+                  className: "TDevice",
+                  location: { file: "models/schemas.py", line: 69 },
+                  role: "request",
+                  tableName: "t_devices",
+                },
+                {
+                  className: "TDeviceResponse",
+                  location: { file: "models/device.py", line: 33 },
+                  role: "response",
+                },
+              ],
+            }),
+            apiCall: apiCall(),
+            matchKind: "exact",
+          },
+        ],
+      });
+
+      const { nodes, edges } = projectDepth(output, "route");
+
+      const model = nodes.find((n) => n.kind === "model" && n.label === "TDevice");
+      const respModel = nodes.find((n) => n.kind === "model" && n.label === "TDeviceResponse");
+      const table = nodes.find((n) => n.kind === "table");
+      const routeNode = nodes.find((n) => n.kind === "route");
+      expect(model).toBeDefined();
+      expect(respModel).toBeDefined();
+      expect(table?.label).toBe("t_devices");
+      // route -> model（両モデル）と model -> table（テーブルを持つモデルのみ）。
+      expect(edges.some((e) => e.source === routeNode?.id && e.target === model?.id)).toBe(true);
+      expect(edges.some((e) => e.source === model?.id && e.target === table?.id)).toBe(true);
+      // 非テーブルモデルからはテーブルエッジを引かない。
+      expect(edges.some((e) => e.source === respModel?.id && e.target === table?.id)).toBe(false);
+
+      assertReferentialIntegrity(nodes, edges);
+    });
+
+    it("deduplicates a table shared by multiple routes into a single node", () => {
+      const sharedRefs = [
+        {
+          className: "TDevice",
+          location: { file: "models/schemas.py", line: 69 },
+          role: "request" as const,
+          tableName: "t_devices",
+        },
+      ];
+      const output = buildOutput({
+        linkages: [
+          {
+            route: route({ path: "/api/devices", schemaRefs: sharedRefs }),
+            apiCall: apiCall({ urlPattern: "/api/devices" }),
+            matchKind: "exact",
+          },
+          {
+            route: route({ path: "/api/devices/{id}", schemaRefs: sharedRefs }),
+            apiCall: apiCall({ urlPattern: "/api/devices/{}" }),
+            matchKind: "exact",
+          },
+        ],
+      });
+
+      const { nodes } = projectDepth(output, "route");
+      expect(nodes.filter((n) => n.kind === "table")).toHaveLength(1);
+      expect(nodes.filter((n) => n.kind === "model")).toHaveLength(1);
+    });
+
     it("includes unmatched routes as flagged nodes with no edge", () => {
       const output = buildOutput({
         unmatchedRoutes: [route({ method: "DELETE", path: "/api/users/{id}" })],

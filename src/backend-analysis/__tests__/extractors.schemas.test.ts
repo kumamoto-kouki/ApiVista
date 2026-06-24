@@ -173,4 +173,28 @@ describe("extractSchemaInfo", () => {
     // ジェネリクス基底 PageResponse[ItemResponse] は土台名 PageResponse を採用する。
     expect(cls?.baseClassNames).toEqual(["PageResponse"]);
   });
+
+  it("detects SQLModel DB-table classes (table=True) and __tablename__", async () => {
+    const source = [
+      "class TDevice(TDeviceBase, table=True):",
+      '    __tablename__ = "t_devices"',
+      "    id: int",
+      "",
+      "class TDeviceResponse(TDeviceBase):",
+      "    pass",
+      "",
+    ].join("\n");
+    const tree = await parse(source);
+    const result = extractSchemaInfo(tree, "models/schemas.py");
+
+    const table = result.classDefinitions.find((d) => d.className === "TDevice");
+    expect(table?.isTable).toBe(true);
+    expect(table?.tableName).toBe("t_devices");
+    // table=True はキーワード引数なので基底名には混ざらない。
+    expect(table?.baseClassNames).toEqual(["TDeviceBase"]);
+
+    const nonTable = result.classDefinitions.find((d) => d.className === "TDeviceResponse");
+    expect(nonTable?.isTable).toBe(false);
+    expect(nonTable?.tableName).toBeNull();
+  });
 });

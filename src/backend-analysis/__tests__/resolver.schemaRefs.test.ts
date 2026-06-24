@@ -362,6 +362,8 @@ describe("resolveSchemaRefs", () => {
       className: "TDevice",
       location: { file: "api.py", line: 6 },
       role: "request",
+      // table=True かつ __tablename__ 無し → SQLModel 既定（クラス名小文字）。
+      tableName: "tdevice",
     });
     // SQLModel 派生は警告なく確定する。
     expect(collector.warnings).toHaveLength(0);
