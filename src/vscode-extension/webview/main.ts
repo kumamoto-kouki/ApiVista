@@ -21,8 +21,10 @@ import { createSearchBox } from "./searchBox.js";
 import type { Depth, GraphEdge, GraphNode } from "./projectDepth.js";
 import { filterConnectedToLinkage, matchWarningNodeIds, projectDepth } from "./projectDepth.js";
 import {
+  clearDependencyLines,
   clearLinkageLines,
   clearTreeGuides,
+  renderDependencyLines,
   renderLinkageLines,
   renderTreeGuides,
   setHoverReachable,
@@ -991,6 +993,7 @@ function clearNodeCards(): void {
   cardContextMenu.close();
   clearTreeGuides(cy);
   clearLinkageLines();
+  clearDependencyLines();
   clearMinimap(cy);
   clearHelpOverlay();
 }
@@ -1410,6 +1413,7 @@ function renderGraph(): void {
   renderNodeCards(nodes, edges, warningsByNode, depths);
   renderTreeGuides(cy, graphContainer, nodes, edges, depths, primaryParentOf, warningsByNode);
   renderLinkageLines(cy, graphContainer, nodes, edges, depths);
+  renderDependencyLines(cy, graphContainer, nodes, edges, depths, primaryParentOf);
   renderMinimap(cy, graphContainer, nodes);
   renderHelpOverlay();
   renderOrphanWarnings(orphanWarnings);

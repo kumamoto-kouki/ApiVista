@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "publisher": "kumamoto-kouki",
   "description": "FastAPI <-> frontend route linkage visualizer for VSCode",
+  "icon": "resources/icon.png",
   "type": "module",
   "engines": {
     "vscode": "^1.90.0"

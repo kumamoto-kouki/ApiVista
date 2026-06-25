@@ -13,6 +13,8 @@ let treeGuideSvg: SVGSVGElement | null = null;
 let treeGuideUpdateFn: (() => void) | null = null;
 let linkageSvg: SVGSVGElement | null = null;
 let linkageUpdateFn: (() => void) | null = null;
+let depLineSvg: SVGSVGElement | null = null;
+let depLineUpdateFn: (() => void) | null = null;
 
 /**
  * ホバー連鎖の到達ノード集合。`null` のときは減光なし（全線不透明）。
@@ -36,6 +38,7 @@ export function setHoverReachable(set: Set<string> | null): void {
   hoverReachable = set;
   treeGuideUpdateFn?.();
   linkageUpdateFn?.();
+  depLineUpdateFn?.();
 }
 
 export function clearTreeGuides(cy?: Core): void {
@@ -52,6 +55,13 @@ export function clearLinkageLines(): void {
   linkageSvg?.remove();
   linkageSvg = null;
   linkageUpdateFn = null;
+  hoverReachable = null;
+}
+
+export function clearDependencyLines(): void {
+  depLineSvg?.remove();
+  depLineSvg = null;
+  depLineUpdateFn = null;
   hoverReachable = null;
 }
 
@@ -250,6 +260,121 @@ export function renderLinkageLines(
   };
 
   linkageUpdateFn = updateFn;
+  cy.on("render pan zoom resize", updateFn);
+  updateFn();
+}
+
+/**
+ * 依存線（二次依存）を **ホバー時のみ** 破線で描く。
+ *
+ * ツリーガイドは structural 辺の主従1本（`primaryParentOf` 一致）だけを実線で描くため、複数から依存される
+ * 枠（共有モジュール等）への二次依存辺には線が無い一方、ホバー連鎖の明度は伝播する。その「線が無いのに
+ * 明るくなる」違和感を埋めるため、ツリーガイドが描かない structural 辺を対象に、両端が到達集合内
+ * （`isLineEmphasized`）のときだけ破線＋矢印で結ぶ。非ホバー時・連鎖外の辺は非表示にする（常時は出さない）。
+ */
+export function renderDependencyLines(
+  cy: Core,
+  graphContainer: HTMLElement,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  depths: Map<string, number>,
+  primaryParentOf: Map<string, string>,
+): void {
+  clearDependencyLines();
+
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  // ツリーガイドが描く主従辺の補集合（＝二次/クロス依存）。両端が存在する structural 辺のみ。
+  const depEdges = edges.filter(
+    (e) =>
+      e.kind === "structural" &&
+      byId.has(e.source) &&
+      byId.has(e.target) &&
+      primaryParentOf.get(e.target) !== e.source,
+  );
+  if (depEdges.length === 0) return;
+
+  const theme = buildTheme();
+
+  type EdgeMeta = { sourceId: string; targetId: string; srcDepth: number; tgtDepth: number };
+  const edgeDataList: EdgeMeta[] = depEdges.map((e) => ({
+    sourceId: e.source,
+    targetId: e.target,
+    srcDepth: depths.get(e.source) ?? 0,
+    tgtDepth: depths.get(e.target) ?? 0,
+  }));
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.style.cssText =
+    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible;";
+  graphContainer.appendChild(svg);
+  depLineSvg = svg;
+
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+  marker.setAttribute("id", "dependency-arrow");
+  marker.setAttribute("markerUnits", "userSpaceOnUse");
+  marker.setAttribute("markerWidth", "14");
+  marker.setAttribute("markerHeight", "10");
+  marker.setAttribute("refX", "14");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("orient", "auto");
+  const arrowPoly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  arrowPoly.setAttribute("points", "0 0, 14 5, 0 10");
+  arrowPoly.setAttribute("fill", theme.edgeHi);
+  marker.appendChild(arrowPoly);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const pathEls: SVGPathElement[] = edgeDataList.map(() => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", theme.edgeHi);
+    path.setAttribute("stroke-width", "2.5");
+    path.setAttribute("stroke-dasharray", "5 3");
+    path.setAttribute("marker-end", "url(#dependency-arrow)");
+    path.style.display = "none";
+    svg.appendChild(path);
+    return path;
+  });
+
+  const updateFn = (): void => {
+    const zoom = cy.zoom();
+    const pan = cy.pan();
+
+    edgeDataList.forEach(({ sourceId, targetId, srcDepth, tgtDepth }, i) => {
+      const path = pathEls[i];
+      // ホバー連鎖（両端が到達集合内）のときだけ描画。それ以外は非表示にして常時は出さない。
+      if (!isLineEmphasized(sourceId, targetId)) {
+        path.style.display = "none";
+        return;
+      }
+      const srcCyNode = cy.getElementById(sourceId);
+      const tgtCyNode = cy.getElementById(targetId);
+      if (!srcCyNode.length || !tgtCyNode.length) {
+        path.style.display = "none";
+        return;
+      }
+
+      const srcPos = srcCyNode.position();
+      const tgtPos = tgtCyNode.position();
+      const srcCenterX = (srcPos.x + srcDepth * INDENT_X) * zoom + pan.x;
+      const tgtCenterX = (tgtPos.x + tgtDepth * INDENT_X) * zoom + pan.x;
+      const srcY = srcPos.y * zoom + pan.y;
+      const tgtY = tgtPos.y * zoom + pan.y;
+      const half = (NODE_CARD_W / 2) * zoom;
+
+      // 相手の向きに応じてカード端をアンカーし、3次ベジェで湾曲させる（同列でも右へ弧を描いて識別可能）。
+      const rightward = tgtCenterX >= srcCenterX;
+      const startX = rightward ? srcCenterX + half : srcCenterX - half;
+      const endX = rightward ? tgtCenterX - half : tgtCenterX + half;
+      const midX = (startX + endX) / 2;
+
+      path.style.display = "";
+      path.setAttribute("d", `M${startX},${srcY} C${midX},${srcY} ${midX},${tgtY} ${endX},${tgtY}`);
+    });
+  };
+
+  depLineUpdateFn = updateFn;
   cy.on("render pan zoom resize", updateFn);
   updateFn();
 }
