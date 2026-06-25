@@ -38,6 +38,10 @@
       {
         "command": "apivista.revealInGraph",
         "title": "ApiVista: この位置の枠をグラフで表示"
+      },
+      {
+        "command": "apivista.createErrorReport",
+        "title": "ApiVista: エラーレポートを作成"
       }
     ],
     "menus": {

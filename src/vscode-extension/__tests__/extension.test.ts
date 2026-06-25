@@ -16,6 +16,7 @@ interface FakeExtensionContext {
   subscriptions: Array<{ dispose: () => void }>;
   extensionUri: { fsPath: string };
   storageUri?: { fsPath: string };
+  extension: { packageJSON: { version: string } };
 }
 
 const registerCommandMock = vi.fn();
@@ -140,6 +141,7 @@ function makeFakeContext(): FakeExtensionContext {
     subscriptions: [],
     extensionUri: { fsPath: "/ext" },
     storageUri: { fsPath: "/ext-storage" },
+    extension: { packageJSON: { version: "0.1.0" } },
   };
 }
 
@@ -172,7 +174,9 @@ function getRegisteredHandler(commandId: string): (...args: unknown[]) => unknow
 describe("extension.activate", () => {
   beforeEach(() => {
     registerCommandMock.mockReset();
-    showErrorMessageMock.mockReset();
+    // reportError は showErrorMessage(...).then(...) でアクションボタンの選択を待つため、
+    // thenable（解決済み Promise）を返すようにする。既定はボタン未押下（undefined）。
+    showErrorMessageMock.mockReset().mockResolvedValue(undefined);
     withProgressMock.mockReset();
     validateMock.mockReset();
     analyzeMock.mockReset();
@@ -202,31 +206,35 @@ describe("extension.activate", () => {
     vi.resetModules();
   });
 
-  it("4コマンド（showGraph/reanalyze/analyzeActiveFile/revealInGraph）を登録し、すべてのdisposableをcontext.subscriptionsへpushする", async () => {
+  it("5コマンド（showGraph/reanalyze/analyzeActiveFile/revealInGraph/createErrorReport）を登録し、すべてのdisposableをcontext.subscriptionsへpushする", async () => {
     const disposableShowGraph = { dispose: vi.fn() };
     const disposableReanalyze = { dispose: vi.fn() };
     const disposableAnalyzeActiveFile = { dispose: vi.fn() };
     const disposableRevealInGraph = { dispose: vi.fn() };
+    const disposableCreateErrorReport = { dispose: vi.fn() };
     registerCommandMock
       .mockReturnValueOnce(disposableShowGraph)
       .mockReturnValueOnce(disposableReanalyze)
       .mockReturnValueOnce(disposableAnalyzeActiveFile)
-      .mockReturnValueOnce(disposableRevealInGraph);
+      .mockReturnValueOnce(disposableRevealInGraph)
+      .mockReturnValueOnce(disposableCreateErrorReport);
 
     const { activate } = await import("../extension.js");
     const context = makeFakeContext();
 
     activate(context as never);
 
-    expect(registerCommandMock).toHaveBeenCalledTimes(4);
+    expect(registerCommandMock).toHaveBeenCalledTimes(5);
     expect(registerCommandMock.mock.calls[0][0]).toBe("apivista.showGraph");
     expect(registerCommandMock.mock.calls[1][0]).toBe("apivista.reanalyze");
     expect(registerCommandMock.mock.calls[2][0]).toBe("apivista.analyzeActiveFile");
     expect(registerCommandMock.mock.calls[3][0]).toBe("apivista.revealInGraph");
+    expect(registerCommandMock.mock.calls[4][0]).toBe("apivista.createErrorReport");
     expect(context.subscriptions).toContain(disposableShowGraph);
     expect(context.subscriptions).toContain(disposableReanalyze);
     expect(context.subscriptions).toContain(disposableAnalyzeActiveFile);
     expect(context.subscriptions).toContain(disposableRevealInGraph);
+    expect(context.subscriptions).toContain(disposableCreateErrorReport);
   });
 
   it("showGraph実行時、validate→analyze→showOrRevealの順に呼び出し、validateが返したrootsをanalyzeに渡す", async () => {
@@ -291,7 +299,7 @@ describe("extension.activate", () => {
     const handler = getRegisteredHandler("apivista.showGraph");
     await handler();
 
-    expect(showErrorMessageMock).toHaveBeenCalledWith(scopeError.message);
+    expect(showErrorMessageMock).toHaveBeenCalledWith(scopeError.message, "エラーレポートを作成");
     expect(analyzeMock).not.toHaveBeenCalled();
     expect(showOrRevealMock).not.toHaveBeenCalled();
   });
@@ -311,7 +319,10 @@ describe("extension.activate", () => {
     const handler = getRegisteredHandler("apivista.showGraph");
     await handler();
 
-    expect(showErrorMessageMock).toHaveBeenCalledWith(preflightError.message);
+    expect(showErrorMessageMock).toHaveBeenCalledWith(
+      preflightError.message,
+      "エラーレポートを作成",
+    );
     expect(analyzeMock).not.toHaveBeenCalled();
     expect(showOrRevealMock).not.toHaveBeenCalled();
   });
@@ -330,7 +341,10 @@ describe("extension.activate", () => {
     const handler = getRegisteredHandler("apivista.showGraph");
     await handler();
 
-    expect(showErrorMessageMock).toHaveBeenCalledWith(analysisError.message);
+    expect(showErrorMessageMock).toHaveBeenCalledWith(
+      analysisError.message,
+      "エラーレポートを作成",
+    );
     expect(showOrRevealMock).not.toHaveBeenCalled();
   });
 
@@ -372,7 +386,7 @@ describe("extension.activate", () => {
     const handler = getRegisteredHandler("apivista.reanalyze");
     await handler();
 
-    expect(showErrorMessageMock).toHaveBeenCalledWith(scopeError.message);
+    expect(showErrorMessageMock).toHaveBeenCalledWith(scopeError.message, "エラーレポートを作成");
     expect(analyzeMock).not.toHaveBeenCalled();
     expect(postLinkageUpdateMock).not.toHaveBeenCalled();
   });
@@ -391,7 +405,10 @@ describe("extension.activate", () => {
     const handler = getRegisteredHandler("apivista.reanalyze");
     await handler();
 
-    expect(showErrorMessageMock).toHaveBeenCalledWith(analysisError.message);
+    expect(showErrorMessageMock).toHaveBeenCalledWith(
+      analysisError.message,
+      "エラーレポートを作成",
+    );
     expect(postLinkageUpdateMock).not.toHaveBeenCalled();
   });
 

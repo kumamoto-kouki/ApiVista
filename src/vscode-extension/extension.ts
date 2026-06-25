@@ -32,11 +32,18 @@
  * - `deactivate`は拡張終了時の安全網として、最後にアクティブだったwatcherが残っていれば`dispose()`する
  *   (パネルが開いたままVSCodeが終了する場合に備える。通常はパネルの`onDidDispose`で先に破棄される)。
  */
+import * as os from "node:os";
 import { relative, sep } from "node:path";
 
 import * as vscode from "vscode";
 
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
+import {
+  buildErrorReport,
+  normalizeError,
+  type ErrorReportData,
+  type WorkspaceInfo,
+} from "./errorReport.js";
 import { copyLinkedChain, copySelectedFunctions } from "./functionCopier.js";
 import * as graphPanel from "./graphPanel.js";
 import { checkPreflight, PreflightError } from "./preflightChecker.js";
@@ -51,17 +58,83 @@ let activeWatcher: ReanalysisWatcher | undefined;
 /** 解析ログを出力する OutputChannel。activate 時に生成し subscriptions で管理する。 */
 let outputChannel: vscode.OutputChannel | undefined;
 
-/** `ScopeError`/`AnalysisError`/`PreflightError`を`showErrorMessage`で表示する共通ハンドラ。 */
-function reportError(error: unknown): void {
+/** エラーレポート用に直近のエラーと発生時の操作を保持する（手動コマンドからの再生成に使う）。 */
+let lastError: { error: unknown; context: string } | undefined;
+
+/** activate 時に package.json から取得する拡張バージョン（レポートの環境欄に載せる）。 */
+let extensionVersion = "unknown";
+
+/** エラーレポート通知のアクションボタン文言。 */
+const REPORT_ACTION = "エラーレポートを作成";
+
+/**
+ * `ScopeError`/`AnalysisError`/`PreflightError`を`showErrorMessage`で表示する共通ハンドラ。
+ * 表示時に直近エラーを記録し、「エラーレポートを作成」ボタンからレポートを生成できるようにする。
+ */
+function reportError(error: unknown, context = "ApiVista"): void {
   if (
     error instanceof ScopeError ||
     error instanceof AnalysisError ||
     error instanceof PreflightError
   ) {
-    void vscode.window.showErrorMessage(error.message);
+    lastError = { error, context };
+    void vscode.window.showErrorMessage(error.message, REPORT_ACTION).then((choice) => {
+      if (choice === REPORT_ACTION) void openErrorReport(error, context);
+    });
     return;
   }
   throw error;
+}
+
+/** 現在のワークスペース直下の backend/ frontend/ 有無を返す（取得不能なら undefined）。 */
+function collectWorkspaceInfo(): WorkspaceInfo | undefined {
+  try {
+    const { backendRoot, frontendRoot } = validate();
+    void backendRoot;
+    void frontendRoot;
+    return { backend: true, frontend: true };
+  } catch {
+    // validate() は backend/ または frontend/ 欠落時に throw する。
+    // 個別の有無までは取得できないため、検証失敗時は構成欄を省略する。
+    return undefined;
+  }
+}
+
+/** エラー（または空テンプレート）から Markdown レポートを組み立てる。 */
+function buildReportMarkdown(error: unknown, context: string): string {
+  const data: ErrorReportData = {
+    context,
+    occurredAt: new Date().toISOString(),
+    error: error === undefined ? undefined : normalizeError(error),
+    env: {
+      apiVista: extensionVersion,
+      vscode: vscode.version,
+      os: `${process.platform} ${os.release()}`,
+      node: process.version,
+    },
+    workspace: collectWorkspaceInfo(),
+  };
+  return buildErrorReport(data);
+}
+
+/** レポートを未保存エディタで開き、同時にクリップボードへコピーする。 */
+async function openErrorReport(error: unknown, context: string): Promise<void> {
+  const md = buildReportMarkdown(error, context);
+  await vscode.env.clipboard.writeText(md);
+  const doc = await vscode.workspace.openTextDocument({ content: md, language: "markdown" });
+  await vscode.window.showTextDocument(doc);
+  void vscode.window.showInformationMessage(
+    "エラーレポートをクリップボードにコピーしました。Issue に貼り付けてください。",
+  );
+}
+
+/** コマンドパレットからのレポート生成。直近エラーがあればそれを、無ければ空テンプレートを開く。 */
+async function runCreateErrorReport(): Promise<void> {
+  if (lastError) {
+    await openErrorReport(lastError.error, lastError.context);
+  } else {
+    await openErrorReport(undefined, "手動作成");
+  }
 }
 
 /** validate→withProgress(analyze) の共通フロー。エラー時は`null`を返す。 */
@@ -78,7 +151,7 @@ async function runAnalysis(
   try {
     scanned = validate();
   } catch (error) {
-    reportError(error);
+    reportError(error, progressTitle);
     return null;
   }
 
@@ -87,7 +160,7 @@ async function runAnalysis(
   try {
     checkPreflight(backendRoot, wasmDir);
   } catch (error) {
-    reportError(error);
+    reportError(error, progressTitle);
     return null;
   }
 
@@ -119,7 +192,7 @@ async function runAnalysis(
       channel?.appendLine("  キャンセルされました。");
       return null;
     }
-    reportError(error);
+    reportError(error, progressTitle);
     if (channel && (error instanceof AnalysisError || error instanceof Error)) {
       channel.appendLine(`  エラー: ${(error as Error).message}`);
       channel.show(true);
@@ -305,6 +378,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const wasmDir = vscode.Uri.joinPath(context.extensionUri, "media", "wasm").fsPath;
   const storageDir = context.storageUri?.fsPath;
 
+  const pkg = context.extension.packageJSON as { version?: unknown };
+  extensionVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
+
   outputChannel = vscode.window.createOutputChannel("ApiVista");
   context.subscriptions.push(outputChannel);
 
@@ -317,6 +393,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("apivista.revealInGraph", (uri?: vscode.Uri) =>
       runRevealInGraph(context, wasmDir, uri),
     ),
+    vscode.commands.registerCommand("apivista.createErrorReport", () => runCreateErrorReport()),
   );
 }
 
