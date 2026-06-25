@@ -644,11 +644,16 @@ let nodeCardUpdateFn: (() => void) | null = null;
 /** Ctrl/Cmd+クリックで複数選択中のノード id 集合。「選択した枠をコピー」の対象。 */
 let selectedNodeIds = new Set<string>();
 
-/** 選択状態を全カードの枠線(boxShadow)に反映する（選択中=リング、非選択=なし）。 */
+/**
+ * 選択状態を全カードに反映する。選択中は「背景の色替え＋リング＋ソフトグロー」で明確に強調し、
+ * 非選択は既定の背景(`cardBg`)・枠線なしへ戻す（背景をトグルするため非選択も明示的に戻す）。
+ */
 function applySelectionHighlight(): void {
   const theme = buildTheme();
   for (const { el, nodeId } of nodeCardEls) {
-    el.style.boxShadow = selectedNodeIds.has(nodeId) ? `0 0 0 2px ${theme.selected}` : "";
+    const sel = selectedNodeIds.has(nodeId);
+    el.style.background = sel ? theme.selectedBg : theme.cardBg;
+    el.style.boxShadow = sel ? `0 0 0 2px ${theme.selected}, 0 0 10px ${theme.selected}66` : "";
   }
 }
 
@@ -662,7 +667,7 @@ function applySelectionHighlight(): void {
 let hoverAdj = new Map<string, Set<string>>();
 
 /** ホバー時に到達カードへ適用する明度アップ（周辺は無変化）。調整可。 */
-const HOVER_BRIGHTNESS = "brightness(1.4)";
+const HOVER_BRIGHTNESS = "brightness(1.6)";
 
 /** `hoverAdj` を `edges` から有向（source→target）で再構築する。 */
 function buildHoverAdjacency(edges: GraphEdge[]): void {
@@ -791,6 +796,13 @@ function renderNodeCards(
     const warnings = warningsByNode.get(node.id) ?? [];
     const card = createNodeCard(node, connCount.get(node.id) ?? 0, warnings, theme);
     card.dataset.depth = String(depths.get(node.id) ?? 0);
+
+    // 左クリックを cytoscape コンテナへ伝播させない。深くインデントされた枠は cy ノードの当たり判定外に
+    // なり、伝播すると cytoscape が空きエリア tap を発火して選択を消してしまうため（右ボタンはパン/
+    // コンテキストメニュー用に伝播を残す）。
+    card.addEventListener("mousedown", (e) => {
+      if (e.button === 0) e.stopPropagation();
+    });
 
     // クリック: 通常=単一選択 / Ctrl(Cmd)+クリック=トグル複数選択（コードジャンプは [data-code-link] のみ）
     card.addEventListener("click", (e) => {
@@ -1075,8 +1087,8 @@ function renderGraph(): void {
     if (event.target === cy) {
       cy?.elements().removeClass("dim").unselect();
       selectedNodeIds.clear();
+      applySelectionHighlight(); // 背景色＋リングを「選択なし」状態へ戻す
       for (const { el } of nodeCardEls) {
-        el.style.boxShadow = "";
         el.style.opacity = "";
       }
       setHoverReachable(null);

@@ -608,13 +608,20 @@ describe("webview/main.ts", () => {
     const routeCard = cards.find((c) => c.textContent?.includes("GET /api/users/{id}"))!;
     const apiCard = cards.find((c) => c.textContent?.includes("GET /api/users/{}"))!;
 
-    // 通常クリック = 単一選択
+    // 通常クリック = 単一選択（リング＋背景色で強調）
     routeCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(routeCard.style.boxShadow).not.toBe("");
-    // Ctrl+クリック = 追加（複数選択）
+    expect(routeCard.style.background).not.toBe("");
+    const selectedBg = routeCard.style.background;
+    // 非選択カードは選択背景色にならない
+    expect(apiCard.style.background).not.toBe(selectedBg);
+
+    // Ctrl+クリック = 追加（複数選択）。先に選択した routeCard も保持される。
     apiCard.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
     expect(apiCard.style.boxShadow).not.toBe("");
+    expect(apiCard.style.background).toBe(selectedBg);
     expect(routeCard.style.boxShadow).not.toBe("");
+    expect(routeCard.style.background).toBe(selectedBg);
 
     // 右クリック → メニューの「選択した枠をコピー」→ copySelected を post
     postMessageMock.mockClear();

@@ -15,6 +15,7 @@ export function buildTheme() {
     cardBg: resolveCssVar("--vscode-editorWidget-background", "#252526"),
     border: resolveCssVar("--vscode-widget-border", "#2b2b2b"),
     selected: resolveCssVar("--vscode-focusBorder", "#0078d4"),
+    selectedBg: resolveCssVar("--vscode-list-activeSelectionBackground", "#094771"),
     text: resolveCssVar("--vscode-foreground", "#cccccc"),
     textSub: resolveCssVar("--vscode-descriptionForeground", "#9d9d9d"),
   };
