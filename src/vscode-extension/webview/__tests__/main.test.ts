@@ -402,6 +402,8 @@ describe("webview/main.ts", () => {
     postMessageMock.mockClear();
     const codeLink = document.querySelector<HTMLElement>("[data-code-link]");
     expect(codeLink).not.toBeNull();
+    // 当たり判定は文字だけ: data-code-link はインライン span（行全体の div ではない）。
+    expect(codeLink!.tagName).toBe("SPAN");
     codeLink!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(postMessageMock).toHaveBeenCalledWith({
