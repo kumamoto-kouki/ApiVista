@@ -263,12 +263,31 @@ window.addEventListener(
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
       e.preventDefault();
       searchBox.open();
-    } else if (e.key === "Escape" && searchBox.isOpen()) {
+      return;
+    }
+    if (e.key === "Escape" && searchBox.isOpen()) {
       e.preventDefault();
       clearSearchHighlight();
       searchMatchIds = [];
       searchQuery = "";
       searchBox.close();
+      return;
+    }
+    // 検索ボックス入力中はグラフ操作キーを無効化（検索に委ねる）。
+    if (searchBox.isOpen() && document.activeElement?.tagName === "INPUT") {
+      return;
+    }
+    // PageDown / PageUp: 1ページ分（ビューポート高の 90%）下/上へパン。
+    if ((e.key === "PageDown" || e.key === "PageUp") && cy) {
+      e.preventDefault();
+      const pan = cy.pan();
+      const dy = graphContainer.clientHeight * 0.9 * (e.key === "PageDown" ? -1 : 1);
+      cy.pan({ x: pan.x, y: pan.y + dy });
+      return;
+    }
+    // タイプ移動: 修飾キーなしの印字可能1文字 → プレフィックス一致の枠へ移動。
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && /\S/.test(e.key)) {
+      typeaheadNavigate(e.key);
     }
   },
   true,
@@ -643,18 +662,99 @@ let nodeCardUpdateFn: (() => void) | null = null;
 
 /** Ctrl/Cmd+クリックで複数選択中のノード id 集合。「選択した枠をコピー」の対象。 */
 let selectedNodeIds = new Set<string>();
+/** 現在の選択が Ctrl/Cmd による複数選択モードか。true のときだけ背景色で強調する。 */
+let selectionMultiMode = false;
 
 /**
- * 選択状態を全カードに反映する。選択中は「背景の色替え＋リング＋ソフトグロー」で明確に強調し、
- * 非選択は既定の背景(`cardBg`)・枠線なしへ戻す（背景をトグルするため非選択も明示的に戻す）。
+ * 選択状態を全カードに反映する。選択中はリング＋ソフトグローで強調し、Ctrl 複数選択モードのときだけ
+ * 背景色（`selectedBg`）も付ける（単一クリック選択はリングのみ・背景色なし）。非選択は既定背景へ戻す。
  */
 function applySelectionHighlight(): void {
   const theme = buildTheme();
   for (const { el, nodeId } of nodeCardEls) {
     const sel = selectedNodeIds.has(nodeId);
-    el.style.background = sel ? theme.selectedBg : theme.cardBg;
+    el.style.background = sel && selectionMultiMode ? theme.selectedBg : theme.cardBg;
     el.style.boxShadow = sel ? `0 0 0 2px ${theme.selected}, 0 0 10px ${theme.selected}66` : "";
   }
+}
+
+/** 指定ノードが画面中央に来るようにパンする（ミニマップのクリック移動と同じ式）。 */
+function panToNode(nodeId: string): void {
+  if (!cy) return;
+  const cyNode = cy.getElementById(nodeId);
+  if (!cyNode.length) return;
+  const pos = cyNode.position();
+  const zoom = cy.zoom();
+  cy.pan({
+    x: graphContainer.clientWidth / 2 - pos.x * zoom,
+    y: graphContainer.clientHeight / 2 - pos.y * zoom,
+  });
+}
+
+/** タイプ移動（typeahead）の入力バッファと無入力タイマー。 */
+let typeaheadBuffer = "";
+let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * 打鍵プレフィックスに前方一致する最初の枠を単一選択し、中央へパンする。
+ * 連続打鍵でプレフィックスを伸ばせる（~800ms 無入力でバッファをリセット）。
+ */
+function typeaheadNavigate(ch: string): void {
+  typeaheadBuffer += ch.toLowerCase();
+  if (typeaheadTimer) clearTimeout(typeaheadTimer);
+  typeaheadTimer = setTimeout(() => {
+    typeaheadBuffer = "";
+  }, 800);
+
+  // searchText は `label + file`（小文字）で先頭がラベルなので、先頭一致＝ラベル前方一致になる。
+  const hit = nodeCardEls.find(({ searchText }) => searchText.startsWith(typeaheadBuffer));
+  if (!hit) return;
+  selectionMultiMode = false;
+  selectedNodeIds = new Set([hit.nodeId]);
+  applySelectionHighlight();
+  panToNode(hit.nodeId);
+}
+
+/** 左下の操作ヘルプ（ラウンド枠・固定）。`graphContainer` 下端＝警告セクション直上に配置される。 */
+let helpOverlayEl: HTMLElement | null = null;
+function clearHelpOverlay(): void {
+  helpOverlayEl?.remove();
+  helpOverlayEl = null;
+}
+function renderHelpOverlay(): void {
+  clearHelpOverlay();
+  const box = document.createElement("div");
+  box.setAttribute("data-help", "true");
+  box.style.cssText = [
+    "position:absolute",
+    "left:10px",
+    "bottom:10px", // graphContainer 下端＝警告セクション直上。展開/縮小に追従、ズーム/パン不動。
+    "z-index:6",
+    "pointer-events:none",
+    "padding:6px 9px",
+    "border-radius:6px",
+    "background:var(--vscode-editorWidget-background,#252526)",
+    "border:1px solid var(--vscode-widget-border,#454545)",
+    "box-shadow:0 2px 8px rgba(0,0,0,0.36)",
+    "font-size:10px",
+    "line-height:1.5",
+    "color:var(--vscode-descriptionForeground,#9d9d9d)",
+    "white-space:nowrap",
+    "user-select:none",
+  ].join(";");
+  const lines = [
+    "クリック=選択 / Ctrl+クリック=複数選択",
+    "文字入力=枠へ移動 / PageUp·Down=上下",
+    "右ドラッグ=パン / ホイール=ズーム",
+    "文字クリック=コードへ / 右クリック=コピー / Ctrl+F=検索",
+  ];
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.textContent = line;
+    box.appendChild(row);
+  }
+  graphContainer.appendChild(box);
+  helpOverlayEl = box;
 }
 
 /**
@@ -705,6 +805,7 @@ function clearNodeCards(): void {
   clearTreeGuides(cy);
   clearLinkageLines();
   clearMinimap(cy);
+  clearHelpOverlay();
 }
 
 function updateNodeCardPositions(): void {
@@ -804,12 +905,14 @@ function renderNodeCards(
       if (e.button === 0) e.stopPropagation();
     });
 
-    // クリック: 通常=単一選択 / Ctrl(Cmd)+クリック=トグル複数選択（コードジャンプは [data-code-link] のみ）
+    // クリック: 通常=単一選択（リングのみ）/ Ctrl(Cmd)+クリック=トグル複数選択（背景色も付く）
     card.addEventListener("click", (e) => {
       if (e.ctrlKey || e.metaKey) {
+        selectionMultiMode = true;
         if (selectedNodeIds.has(node.id)) selectedNodeIds.delete(node.id);
         else selectedNodeIds.add(node.id);
       } else {
+        selectionMultiMode = false;
         selectedNodeIds = new Set([node.id]);
       }
       applySelectionHighlight();
@@ -1109,6 +1212,7 @@ function renderGraph(): void {
   renderTreeGuides(cy, graphContainer, nodes, edges, depths, primaryParentOf, warningsByNode);
   renderLinkageLines(cy, graphContainer, nodes, edges, depths);
   renderMinimap(cy, graphContainer, nodes);
+  renderHelpOverlay();
   renderOrphanWarnings(orphanWarnings);
 
   // 再描画（再解析・深度切替）後も検索中なら一致表示を維持する。

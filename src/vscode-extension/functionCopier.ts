@@ -45,8 +45,31 @@ function flattenFunctionSymbols(symbols: vscode.DocumentSymbol[]): vscode.Docume
   return result;
 }
 
-/** ファイルを開いて指定関数名の range からコードを抽出する。 */
-async function extractCode(absolutePath: string, funcName: string): Promise<string | undefined> {
+/** DocumentSymbol の階層を種別問わず全て平坦化する（行内包フォールバック用）。 */
+function flattenAllSymbols(symbols: vscode.DocumentSymbol[]): vscode.DocumentSymbol[] {
+  const result: vscode.DocumentSymbol[] = [];
+  for (const sym of symbols) {
+    result.push(sym);
+    if (sym.children.length > 0) {
+      result.push(...flattenAllSymbols(sym.children));
+    }
+  }
+  return result;
+}
+
+/**
+ * ファイルを開いて、関数の **定義行(`line`, 1始まり)** で範囲を特定しコードを抽出する。
+ *
+ * 1ファイル内に同名関数が複数ある（openapi-generator の ParamCreator/Fp/Factory/class の `deviceSearch` 等）
+ * ため、名前一致だけでは別物を拾う。定義開始行が一致する Function/Method を優先採用し、無ければ当該行を
+ * 内包する最小範囲のシンボル（アロー代入メソッド等で Function/Method として出ないケースの救済）、
+ * それも無ければ名前一致でフォールバックする。
+ */
+async function extractCode(
+  absolutePath: string,
+  funcName: string,
+  line: number,
+): Promise<string | undefined> {
   let doc: vscode.TextDocument;
   try {
     doc = await vscode.workspace.openTextDocument(absolutePath);
@@ -58,10 +81,25 @@ async function extractCode(absolutePath: string, funcName: string): Promise<stri
     doc.uri,
   );
   if (!symbols) return undefined;
+
+  const targetLine = line - 1; // DocumentSymbol は 0 始まり
+
+  // 1. 定義開始行が一致する Function/Method（同名衝突を行で解消）。
   const funcs = flattenFunctionSymbols(symbols);
-  const sym = funcs.find((s) => s.name === funcName);
-  if (!sym) return undefined;
-  return doc.getText(sym.range);
+  const byLine = funcs.find((s) => s.range.start.line === targetLine);
+  if (byLine) return doc.getText(byLine.range);
+
+  // 2. 当該行を内包する最小範囲のシンボル（種別問わず）。
+  const enclosing = flattenAllSymbols(symbols)
+    .filter((s) => s.range.start.line <= targetLine && targetLine <= s.range.end.line)
+    .sort(
+      (a, b) => a.range.end.line - a.range.start.line - (b.range.end.line - b.range.start.line),
+    );
+  if (enclosing.length > 0) return doc.getText(enclosing[0].range);
+
+  // 3. 名前一致フォールバック。
+  const byName = funcs.find((s) => s.name === funcName);
+  return byName ? doc.getText(byName.range) : undefined;
 }
 
 /**
@@ -154,7 +192,7 @@ export async function copyLinkedChain(
   const snippets: FunctionSnippet[] = [];
   for (const fn of ordered) {
     const root = fn.side === "backend" ? backendRoot : frontendRoot;
-    const code = await extractCode(join(root, fn.location.file), fn.name);
+    const code = await extractCode(join(root, fn.location.file), fn.name, fn.location.line);
     if (code) {
       snippets.push({
         funcName: fn.name,
@@ -209,7 +247,7 @@ export async function copySelectedFunctions(
   const snippets: FunctionSnippet[] = [];
   for (const fn of ordered) {
     const root = fn.side === "backend" ? backendRoot : frontendRoot;
-    const code = await extractCode(join(root, fn.location.file), fn.name);
+    const code = await extractCode(join(root, fn.location.file), fn.name, fn.location.line);
     if (code) {
       snippets.push({
         funcName: fn.name,
