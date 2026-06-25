@@ -19,6 +19,7 @@ eslint.config.js
 
 # Dev scripts
 .demo_driver.mjs
+.verify-*.mjs
 vitest.config.*
 *.sh
 

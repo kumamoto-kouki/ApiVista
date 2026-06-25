@@ -5,6 +5,14 @@
   "publisher": "kumamoto-kouki",
   "description": "FastAPI <-> frontend route linkage visualizer for VSCode",
   "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kumamoto-kouki/ApiVista.git"
+  },
+  "homepage": "https://github.com/kumamoto-kouki/ApiVista#readme",
+  "bugs": {
+    "url": "https://github.com/kumamoto-kouki/ApiVista/issues"
+  },
   "type": "module",
   "engines": {
     "vscode": "^1.90.0"
