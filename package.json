@@ -2,7 +2,7 @@
   "name": "apivista",
   "displayName": "ApiVista",
   "version": "0.1.0",
-  "publisher": "kumamoto-kouki",
+  "publisher": "kumamotokouki",
   "description": "FastAPI <-> frontend route linkage visualizer for VSCode",
   "icon": "resources/icon.png",
   "repository": {
