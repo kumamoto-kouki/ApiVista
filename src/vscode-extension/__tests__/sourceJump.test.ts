@@ -98,8 +98,10 @@ const WORKSPACE_ROOT = "/workspace/root";
 describe("sourceJump.reveal", () => {
   beforeEach(() => {
     workspaceFolders = [makeFolder(WORKSPACE_ROOT)];
-    joinPathMock.mockReset().mockImplementation((folderUri: FakeUri, relativePath: string) => ({
-      fsPath: `${folderUri.fsPath}/${relativePath}`,
+    // 実 vscode.Uri.joinPath は可変長（base, ...segments）。frontend/backend プレフィックス候補を
+    // 正しく再現するため全セグメントを結合する。
+    joinPathMock.mockReset().mockImplementation((folderUri: FakeUri, ...segments: string[]) => ({
+      fsPath: [folderUri.fsPath, ...segments].join("/"),
     }));
     showTextDocumentMock.mockReset();
   });
@@ -176,6 +178,26 @@ describe("sourceJump.reveal", () => {
     const { reveal } = await import("../sourceJump.js");
 
     await expect(reveal({ file: "backend/app/main.py", line: 1 })).rejects.toThrow();
+    expect(showTextDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it("ワークスペース外へ脱出する相対パス(../)は開かずに拒否する(パストラバーサル防御)", async () => {
+    // 信頼できない location.file。joinPath は .. を正規化するため候補はワークスペース外を指す。
+    const { reveal } = await import("../sourceJump.js");
+
+    await expect(reveal({ file: "../../etc/passwd", line: 1 })).rejects.toThrow(
+      "../../etc/passwd:1 を開けませんでした",
+    );
+    expect(showTextDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it("途中で親ディレクトリへ脱出するパス(foo/../../../...)も拒否する", async () => {
+    // frontend/・backend/ プレフィックスを付けた候補でもルート外へ抜ける深さ。
+    const { reveal } = await import("../sourceJump.js");
+
+    await expect(reveal({ file: "foo/../../../secret.txt", line: 1 })).rejects.toThrow(
+      "foo/../../../secret.txt:1 を開けませんでした",
+    );
     expect(showTextDocumentMock).not.toHaveBeenCalled();
   });
 });

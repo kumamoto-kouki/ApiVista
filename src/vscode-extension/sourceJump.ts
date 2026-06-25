@@ -10,11 +10,25 @@
  *   呼び出し元へエラーを伝播させる（design.mdは`SourceJump`専用のエラークラスを定義していないため、
  *   素の`Error`をthrow、または`showTextDocument`自身のrejectionをそのまま伝播させる）。
  */
+import * as path from "node:path";
+
 import * as vscode from "vscode";
 
 export interface SourceLocation {
   file: string;
   line: number;
+}
+
+/**
+ * `targetFsPath` が `rootFsPath`（ワークスペースルート）配下に収まるかを判定する。
+ *
+ * `location.file` は Webview（信頼できない境界）由来で、`vscode.Uri.joinPath` は `..` を
+ * 正規化するため、`../../etc/passwd` のような値はワークスペース外を指しうる。`path.relative` は
+ * 両パスを正規化してから相対化するため、結果が `..` で始まる/絶対パスになる場合は範囲外脱出と判定できる。
+ */
+function isWithinRoot(rootFsPath: string, targetFsPath: string): boolean {
+  const rel = path.relative(rootFsPath, targetFsPath);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
 export async function reveal(location: SourceLocation): Promise<void> {
@@ -33,6 +47,8 @@ export async function reveal(location: SourceLocation): Promise<void> {
   ];
 
   for (const uri of candidates) {
+    // パストラバーサル防御: ワークスペース外を指す候補は開かずにスキップする。
+    if (!isWithinRoot(workspaceFolder.uri.fsPath, uri.fsPath)) continue;
     try {
       const editor = await vscode.window.showTextDocument(uri);
       const position = new vscode.Position(location.line - 1, 0);
