@@ -62,14 +62,24 @@ function buildOutput(
   };
 }
 
-/** functions からシンボルレジストリを構築する（path = root/location.file）。 */
+/** functions からシンボルレジストリを構築する（path = root/location.file）。range は定義行(0始まり)を持つ。 */
 function registerSymbols(functions: LinkedFunctionNode[]): void {
   symbolsByPath = new Map();
   for (const f of functions) {
     const root = f.side === "backend" ? BE : FE;
     const path = `${root}/${f.location.file}`;
     const list = symbolsByPath.get(path) ?? [];
-    list.push({ name: f.name, kind: 11, children: [], range: { code: `code:${f.name}` } });
+    const startLine = f.location.line - 1;
+    list.push({
+      name: f.name,
+      kind: 11,
+      children: [],
+      range: {
+        start: { line: startLine, character: 0 },
+        end: { line: startLine + 4, character: 0 },
+        code: `code:${f.name}@${f.location.line}`,
+      },
+    });
     symbolsByPath.set(path, list);
   }
 }
@@ -302,5 +312,38 @@ describe("copySelectedFunctions", () => {
     const count = await copySelectedImport(output, ["nope"]);
     expect(count).toBe(0);
     expect(clipboardWriteMock).not.toHaveBeenCalled();
+  });
+
+  it("同名・異 line の関数を line で正しく区別して抽出する（#3 誤キャプチャ防止）", async () => {
+    // 同一ファイルに同名 'deviceSearch' が複数（ParamCreator/Fp/Factory 相当）。line で区別する。
+    const functions = [
+      fn({
+        id: "frontend:pc",
+        side: "frontend",
+        name: "deviceSearch",
+        location: { file: "client.ts", line: 10 },
+      }),
+      fn({
+        id: "frontend:fp",
+        side: "frontend",
+        name: "deviceSearch",
+        location: { file: "client.ts", line: 50 },
+      }),
+      fn({
+        id: "frontend:factory",
+        side: "frontend",
+        name: "deviceSearch",
+        location: { file: "client.ts", line: 90 },
+      }),
+    ];
+    const output = buildOutput(functions, []);
+    registerSymbols(functions);
+
+    // line 50 の Fp 版だけを選択 → その行の関数が入る（先頭の line 10 ではない）。
+    await copySelectedImport(output, ["frontend:fp"]);
+    const md = clipboardWriteMock.mock.calls[0][0] as string;
+    expect(md).toContain("code:deviceSearch@50");
+    expect(md).not.toContain("code:deviceSearch@10");
+    expect(md).not.toContain("code:deviceSearch@90");
   });
 });

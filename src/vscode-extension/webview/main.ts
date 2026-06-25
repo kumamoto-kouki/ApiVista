@@ -575,10 +575,70 @@ function computeLayout(
     }
   }
 
-  // バックエンドを先に配置し、その Y を基準にフロントの並び順を整列する（ペア整列）。
-  layoutColumn(backendNodes, RIGHT_X);
-  const frontendRootKey = buildFrontendAlignmentKey(frontendNodes, edges, positions);
-  layoutColumn(frontendNodes, LEFT_X, frontendRootKey);
+  /**
+   * 連携の無い枠を多列グリッドで配置する（縦長の圧縮）。`baseX` の外側（`dir`=-1 左 / +1 右）へ
+   * 列を並べ、各列 `maxRows` 行で折り返す。連携線は持たないので depth 0・主親なしで配置する。
+   */
+  const GRID_COL_W = NODE_CARD_W + 30;
+  const GRID_ROW_H = NODE_CARD_H + ROW_GAP;
+  function layoutGrid(group: GraphNode[], baseX: number, dir: 1 | -1, maxRows: number): void {
+    group.forEach((node, i) => {
+      const col = Math.floor(i / maxRows);
+      const row = i % maxRows;
+      depths.set(node.id, 0);
+      positions[node.id] = {
+        x: baseX + dir * GRID_COL_W * (col + 1),
+        y: TOP_Y + NODE_CARD_H / 2 + row * GRID_ROW_H,
+      };
+    });
+  }
+
+  // フロント↔バック連携に到達する枠の集合（linkage 端点から全エッジ無向 BFS）。
+  const connectedIds = ((): Set<string> => {
+    const adj = new Map<string, Set<string>>();
+    const link = (a: string, b: string): void => {
+      (adj.get(a) ?? adj.set(a, new Set()).get(a)!).add(b);
+    };
+    for (const e of edges) {
+      link(e.source, e.target);
+      link(e.target, e.source);
+    }
+    const keep = new Set<string>();
+    const q: string[] = [];
+    const enqueue = (id: string): void => {
+      if (!keep.has(id)) {
+        keep.add(id);
+        q.push(id);
+      }
+    };
+    for (const e of edges) {
+      if (e.kind !== "linkage") continue;
+      enqueue(e.source);
+      enqueue(e.target);
+    }
+    while (q.length > 0) {
+      const id = q.shift()!;
+      for (const n of adj.get(id) ?? []) enqueue(n);
+    }
+    return keep;
+  })();
+
+  const connFE = frontendNodes.filter((n) => connectedIds.has(n.id));
+  const connBE = backendNodes.filter((n) => connectedIds.has(n.id));
+  const unconnFE = frontendNodes.filter((n) => !connectedIds.has(n.id));
+  const unconnBE = backendNodes.filter((n) => !connectedIds.has(n.id));
+
+  // 連携あり: バックを先に配置し、その Y を基準にフロントをペア整列。
+  layoutColumn(connBE, RIGHT_X);
+  const frontendRootKey = buildFrontendAlignmentKey(connFE, edges, positions);
+  layoutColumn(connFE, LEFT_X, frontendRootKey);
+
+  // 連携なし: 主列の外側に多列グリッド（行数は連携列の高さに合わせて圧縮、最低 MIN_GRID_ROWS）。
+  const MIN_GRID_ROWS = 12;
+  const gridRows = Math.max(connFE.length, connBE.length, MIN_GRID_ROWS);
+  layoutGrid(unconnFE, LEFT_X, -1, gridRows);
+  layoutGrid(unconnBE, RIGHT_X, 1, gridRows);
+
   return { positions, depths, primaryParentOf };
 }
 

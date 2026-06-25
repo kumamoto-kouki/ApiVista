@@ -608,20 +608,19 @@ describe("webview/main.ts", () => {
     const routeCard = cards.find((c) => c.textContent?.includes("GET /api/users/{id}"))!;
     const apiCard = cards.find((c) => c.textContent?.includes("GET /api/users/{}"))!;
 
-    // 通常クリック = 単一選択（リング＋背景色で強調）
+    // 通常クリック = 単一選択（リングのみ。背景色は付けない＝未選択カードと同じ背景）
     routeCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(routeCard.style.boxShadow).not.toBe("");
-    expect(routeCard.style.background).not.toBe("");
-    const selectedBg = routeCard.style.background;
-    // 非選択カードは選択背景色にならない
-    expect(apiCard.style.background).not.toBe(selectedBg);
+    const plainBg = routeCard.style.background;
+    expect(apiCard.style.background).toBe(plainBg); // 単一選択は背景色で目立たせない
 
-    // Ctrl+クリック = 追加（複数選択）。先に選択した routeCard も保持される。
+    // Ctrl+クリック = 複数選択（背景色も付く）。先に選択した routeCard も背景色になる。
     apiCard.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
     expect(apiCard.style.boxShadow).not.toBe("");
-    expect(apiCard.style.background).toBe(selectedBg);
     expect(routeCard.style.boxShadow).not.toBe("");
-    expect(routeCard.style.background).toBe(selectedBg);
+    const multiBg = apiCard.style.background;
+    expect(multiBg).not.toBe(plainBg); // 複数選択は背景色が変わる
+    expect(routeCard.style.background).toBe(multiBg);
 
     // 右クリック → メニューの「選択した枠をコピー」→ copySelected を post
     postMessageMock.mockClear();
@@ -633,5 +632,59 @@ describe("webview/main.ts", () => {
     selectedItem.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(postMessageMock).toHaveBeenCalledWith(expect.objectContaining({ type: "copySelected" }));
+  });
+
+  it("type-to-navigate: typing a prefix selects the matching frame and pans to it (#5)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(
+      buildOutput({ linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }] }),
+    );
+
+    const routeCard = Array.from(document.querySelectorAll<HTMLElement>(".node-card")).find((c) =>
+      c.textContent?.includes("GET /api/users/{id}"),
+    )!;
+    const cyInstance = cytoscapeMock.mock.results.at(-1)!.value as {
+      pan: ReturnType<typeof vi.fn>;
+    };
+    cyInstance.pan.mockClear();
+    // panToNode は getElementById().position() を使うので、位置付きノードを返すようにする。
+    cyGetElementByIdMock.mockReturnValue({
+      length: 1,
+      position: () => ({ x: 0, y: 0 }),
+    } as never);
+
+    // route ラベル "GET /api/users/{id}" → "get" 打鍵で前方一致・選択＋パン。
+    for (const ch of "get") {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: ch }));
+    }
+    expect(routeCard.style.boxShadow).not.toBe(""); // 選択された
+    expect(cyInstance.pan).toHaveBeenCalled(); // 中央へパン
+  });
+
+  it("PageDown/PageUp pan the graph vertically (#7)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const cyInstance = cytoscapeMock.mock.results.at(-1)!.value as {
+      pan: ReturnType<typeof vi.fn>;
+    };
+    cyInstance.pan.mockClear();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown" }));
+    expect(cyInstance.pan).toHaveBeenCalled();
+    cyInstance.pan.mockClear();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp" }));
+    expect(cyInstance.pan).toHaveBeenCalled();
+  });
+
+  it("renders a fixed help overlay at bottom-left with rounded border (#8)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(buildOutput({}));
+
+    const help = document.querySelector<HTMLElement>('[data-help="true"]');
+    expect(help).not.toBeNull();
+    expect(help!.style.left).toBe("10px");
+    expect(help!.style.bottom).toBe("10px");
+    expect(help!.style.borderRadius).not.toBe("");
+    expect(help!.textContent).toContain("クリック");
   });
 });
