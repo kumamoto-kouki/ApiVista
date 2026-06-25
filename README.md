@@ -10,6 +10,13 @@
 
 </div>
 
+<div align="center">
+
+<img src="docs/images/route-linkage-graph.png" alt="ApiVista ルート連携グラフの表示例" width="900" />
+
+</div>
+
+
 ---
 
 ## ApiVista とは
@@ -123,6 +130,9 @@
 サンプルプロジェクト(FastAPI + Nuxt.js)の**ルート連携ビュー**のイメージです。フロントの composable が
 バックの FastAPI ルートへ連携され、リクエストモデルがあれば「モデル」枠として連結されます。
 連携先の無いルート(`DELETE /api/posts/{post_id}`)は破線で区別されます。
+
+
+以下は同じ連携を構造として表した概念図です。
 
 ```mermaid
 graph LR
