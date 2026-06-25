@@ -285,6 +285,22 @@ window.addEventListener(
       cy.pan({ x: pan.x, y: pan.y + dy });
       return;
     }
+    // 矢印キー: 固定ステップで上下左右に画面移動。
+    if (
+      cy &&
+      (e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight")
+    ) {
+      e.preventDefault();
+      const STEP = 100;
+      const pan = cy.pan();
+      const dx = e.key === "ArrowLeft" ? STEP : e.key === "ArrowRight" ? -STEP : 0;
+      const dy = e.key === "ArrowUp" ? STEP : e.key === "ArrowDown" ? -STEP : 0;
+      cy.pan({ x: pan.x + dx, y: pan.y + dy });
+      return;
+    }
     // タイプ移動: 修飾キーなしの印字可能1文字 → プレフィックス一致の枠へ移動。
     if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && /\S/.test(e.key)) {
       typeaheadNavigate(e.key);
@@ -308,10 +324,31 @@ const ROW_GAP = 16;
 /** structural ネスト1階層ごとの X インデント（px）。 */
 const INDENT_X = 60;
 
-/** ズーム上限（カードを原寸より拡大しない。枠が少ないときの過剰拡大を防ぐ）。 */
-const MAX_ZOOM = 1;
+/** ズーム上限（原寸の 130% まで拡大を許容）。初期表示は applyInitialView で zoom=1 に固定。 */
+const MAX_ZOOM = 1.3;
 /** ズーム下限（枠が多いときの極小化を防ぐ。はみ出しは右ドラッグパン/ホイールで閲覧）。 */
 const MIN_ZOOM = 0.2;
+
+/**
+ * フロントエンドのディレクトリ別サブゾーンの既知ディレクトリ（表示順＝連携同数時の左右タイブレーク）。
+ * 既知集合に属さないファイルは `other` に集約する。
+ */
+const FRONTEND_DIR_ORDER = ["components", "composables", "pages", "utils", "libs"] as const;
+const OTHER_DIR = "other";
+const FRONTEND_DIRS = new Set<string>(FRONTEND_DIR_ORDER);
+
+/**
+ * ソース相対パスからサブゾーン分類用のディレクトリ名を返す。
+ * パスのいずれかのセグメントが既知ディレクトリと一致すれば最初の一致を採用（`src/components/...` も拾う）、
+ * 無ければ `other`。`file` 未設定（バックエンド route 等）も `other`。
+ */
+function topDir(file: string | undefined): string {
+  if (!file) return OTHER_DIR;
+  for (const seg of file.split("/")) {
+    if (FRONTEND_DIRS.has(seg)) return seg;
+  }
+  return OTHER_DIR;
+}
 
 // ─────────────────────────────────────────
 // 凡例
@@ -389,22 +426,43 @@ function renderLegend(container: HTMLElement): void {
 
 let frontendZone: HTMLElement | null = null;
 let backendZone: HTMLElement | null = null;
+/** フロントのディレクトリ別サブゾーン（dir → 枠要素）。outer の frontendZone 内に重ねて描く。 */
+let frontendSubZones = new Map<string, HTMLElement>();
 
-function renderBackgroundZones(frontendCount: number, backendCount: number): void {
+/** ディレクトリ別フロントカード数を既知順（FRONTEND_DIR_ORDER→other）で返す。0 件のディレクトリは除く。 */
+function frontendDirCounts(nodes: GraphNode[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const n of nodes) {
+    if (n.side !== "frontend") continue;
+    const d = topDir(n.sourceLocation?.file);
+    counts.set(d, (counts.get(d) ?? 0) + 1);
+  }
+  const ordered = new Map<string, number>();
+  for (const d of [...FRONTEND_DIR_ORDER, OTHER_DIR]) {
+    if (counts.has(d)) ordered.set(d, counts.get(d)!);
+  }
+  return ordered;
+}
+
+function renderBackgroundZones(dirCounts: Map<string, number>, backendCount: number): void {
   if (frontendZone) frontendZone.remove();
   if (backendZone) backendZone.remove();
+  for (const z of frontendSubZones.values()) z.remove();
+  frontendSubZones = new Map();
 
   const theme = buildTheme();
+  const frontendCount = [...dirCounts.values()].reduce((a, b) => a + b, 0);
 
   // 矩形（left/top/width/height）は updateZonePositions が実カード位置から算出する。
   // 固定 50% をやめることで、縮尺・解像度に依らずカードが必ずゾーン内に収まる。
+  // outer のフロントエンド枠（全サブゾーンを内包する薄い外枠）。ヘッダは左上に置く。
   frontendZone = document.createElement("div");
   frontendZone.style.cssText = [
     "position:absolute",
     "display:none",
-    `background:${theme.apiCall}0d`,
-    `border:1px solid ${theme.apiCall}35`,
-    "border-radius:8px",
+    `background:${theme.apiCall}08`,
+    `border:1px solid ${theme.apiCall}25`,
+    "border-radius:10px",
     "pointer-events:none",
     "z-index:2",
     "box-sizing:border-box",
@@ -415,6 +473,27 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
     "display:flex;align-items:center;justify-content:space-between;padding:8px 12px 0;";
   feHeader.innerHTML = `<span style="font-size:12px;font-weight:600;color:${theme.apiCall}">フロントエンド <span style="font-weight:400;font-size:11px;color:${theme.textSub}">呼び出し元</span></span><span style="background:${theme.apiCall};color:#1f1f1f;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${frontendCount}</span>`;
   frontendZone.appendChild(feHeader);
+
+  // ディレクトリ別サブゾーン（outer より濃い縁＋ディレクトリ名ヘッダ）。
+  for (const [dir, count] of dirCounts) {
+    const sub = document.createElement("div");
+    sub.dataset.zoneDir = dir;
+    sub.style.cssText = [
+      "position:absolute",
+      "display:none",
+      `background:${theme.apiCall}10`,
+      `border:1px dashed ${theme.apiCall}45`,
+      "border-radius:8px",
+      "pointer-events:none",
+      "z-index:3",
+      "box-sizing:border-box",
+    ].join(";");
+    const subHeader = document.createElement("div");
+    subHeader.style.cssText = "padding:6px 10px 0;";
+    subHeader.innerHTML = `<span style="font-size:11px;font-weight:600;color:${theme.apiCall}">${dir} <span style="font-weight:400;color:${theme.textSub}">(${count})</span></span>`;
+    sub.appendChild(subHeader);
+    frontendSubZones.set(dir, sub);
+  }
 
   backendZone = document.createElement("div");
   backendZone.style.cssText = [
@@ -436,6 +515,7 @@ function renderBackgroundZones(frontendCount: number, backendCount: number): voi
 
   // Cytoscape canvas 生成後に追加することでキャンバス上に重なる (z-index:2 > canvas:auto)
   graphContainer.appendChild(frontendZone);
+  for (const sub of frontendSubZones.values()) graphContainer.appendChild(sub);
   graphContainer.appendChild(backendZone);
 }
 
@@ -625,19 +705,52 @@ function computeLayout(
 
   const connFE = frontendNodes.filter((n) => connectedIds.has(n.id));
   const connBE = backendNodes.filter((n) => connectedIds.has(n.id));
-  const unconnFE = frontendNodes.filter((n) => !connectedIds.has(n.id));
   const unconnBE = backendNodes.filter((n) => !connectedIds.has(n.id));
 
-  // 連携あり: バックを先に配置し、その Y を基準にフロントをペア整列。
+  // バックエンドは従来どおり右列（連携あり）＋外側グリッド（連携なし）に配置する。
   layoutColumn(connBE, RIGHT_X);
-  const frontendRootKey = buildFrontendAlignmentKey(connFE, edges, positions);
-  layoutColumn(connFE, LEFT_X, frontendRootKey);
-
-  // 連携なし: 主列の外側に多列グリッド（行数は連携列の高さに合わせて圧縮、最低 MIN_GRID_ROWS）。
   const MIN_GRID_ROWS = 12;
   const gridRows = Math.max(connFE.length, connBE.length, MIN_GRID_ROWS);
-  layoutGrid(unconnFE, LEFT_X, -1, gridRows);
   layoutGrid(unconnBE, RIGHT_X, 1, gridRows);
+
+  // フロントエンドはディレクトリ単位でクラスタ化し、連携を優先しつつグループ表示する（#2）。
+  // - クラスタ内: バックの Y を基準にした整列キーで並べ（連携線を短く）、各クラスタを縦グリッドに折り返す。
+  // - クラスタの横並び: 連携ノードを多く含む順に LEFT_X（バック寄り）から外側（左）へ。
+  const alignKey = buildFrontendAlignmentKey(frontendNodes, edges, positions);
+
+  const feGroups = new Map<string, GraphNode[]>();
+  for (const n of frontendNodes) {
+    const d = topDir(n.sourceLocation?.file);
+    (feGroups.get(d) ?? feGroups.set(d, []).get(d)!).push(n);
+  }
+  const dirRank = (d: string): number => {
+    const i = (FRONTEND_DIR_ORDER as readonly string[]).indexOf(d);
+    return i === -1 ? FRONTEND_DIR_ORDER.length : i;
+  };
+  const orderedGroups = [...feGroups.entries()].sort((a, b) => {
+    const ca = a[1].filter((n) => connectedIds.has(n.id)).length;
+    const cb = b[1].filter((n) => connectedIds.has(n.id)).length;
+    if (ca !== cb) return cb - ca; // 連携の多いクラスタを先（＝バック寄り）に
+    return dirRank(a[0]) - dirRank(b[0]); // 同数は既知ディレクトリ順で決定的に
+  });
+
+  const FE_MAX_ROWS = gridRows; // クラスタ縦グリッドの折り返し行数（バック側の高さに揃える）
+  const DIR_GAP = 40; // クラスタ間の横間隔（サブゾーン枠が重ならない余白）
+  let bandRight = LEFT_X; // 最も連携の多いクラスタの右端基準（バック寄り）
+  for (const [, members] of orderedGroups) {
+    const ordered = [...members].sort((a, b) => alignKey(a.id) - alignKey(b.id));
+    const cols = Math.max(1, Math.ceil(ordered.length / FE_MAX_ROWS));
+    ordered.forEach((node, i) => {
+      const col = Math.floor(i / FE_MAX_ROWS);
+      const row = i % FE_MAX_ROWS;
+      depths.set(node.id, 0);
+      positions[node.id] = {
+        x: bandRight - col * GRID_COL_W, // col0 を右端（バック寄り）、以降を左へ
+        y: TOP_Y + NODE_CARD_H / 2 + row * GRID_ROW_H,
+      };
+    });
+    bandRight -= cols * GRID_COL_W + DIR_GAP; // 次のクラスタはさらに左へ
+  }
 
   return { positions, depths, primaryParentOf };
 }
@@ -716,6 +829,10 @@ type NodeCardEntry = {
   searchText: string;
   /** 対応する関数 ID（選択枠コピーの対象。route/apiCall/function 枠のみ持つ）。 */
   functionId?: string;
+  /** ソース位置（コード→枠フォーカスの照合に使う）。 */
+  sourceLocation?: { file: string; line: number };
+  /** フロントのディレクトリ別サブゾーン分類（frontend のみ。backend は undefined）。 */
+  dir?: string;
 };
 let nodeCardEls: NodeCardEntry[] = [];
 let nodeCardUpdateFn: (() => void) | null = null;
@@ -749,6 +866,15 @@ function panToNode(nodeId: string): void {
     x: graphContainer.clientWidth / 2 - pos.x * zoom,
     y: graphContainer.clientHeight / 2 - pos.y * zoom,
   });
+}
+
+/** 指定ノードを「オンマウス相当」に強調する（到達集合を明るく＋線を強調）。ホバーと逆遷移で共用。 */
+function focusNodeEmphasis(nodeId: string): void {
+  const reachable = reachableNodeIds(nodeId);
+  for (const { el, nodeId: nid } of nodeCardEls) {
+    el.style.filter = reachable.has(nid) ? HOVER_BRIGHTNESS : "";
+  }
+  setHoverReachable(reachable);
 }
 
 /** タイプ移動（typeahead）の入力バッファと無入力タイマー。 */
@@ -793,7 +919,8 @@ function renderHelpOverlay(): void {
     "pointer-events:none",
     "padding:6px 9px",
     "border-radius:6px",
-    "background:var(--vscode-editorWidget-background,#252526)",
+    // 背景を40%透過（60%不透明）。文字は不透明のまま。
+    "background:color-mix(in srgb, var(--vscode-editorWidget-background,#252526) 60%, transparent)",
     "border:1px solid var(--vscode-widget-border,#454545)",
     "box-shadow:0 2px 8px rgba(0,0,0,0.36)",
     "font-size:10px",
@@ -901,16 +1028,25 @@ const ZONE_HEADER_SPACE = 30;
 function updateZonePositions(): void {
   const containerRect = graphContainer.getBoundingClientRect();
 
-  const fit = (side: "backend" | "frontend", zone: HTMLElement | null): void => {
+  /**
+   * `predicate` に一致するカードの画面 bbox に `zone` を合わせる。`topSpace`/`pad` でヘッダ余白・外周余白を調整。
+   * outer フロント枠はサブゾーン（ヘッダ付き）を内包するため大きめの余白を与える。
+   */
+  const fit = (
+    zone: HTMLElement | null,
+    predicate: (entry: NodeCardEntry) => boolean,
+    topSpace: number,
+    pad: number,
+  ): void => {
     if (!zone) return;
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
     let count = 0;
-    for (const { el, side: cardSide } of nodeCardEls) {
-      if (cardSide !== side) continue;
-      const r = el.getBoundingClientRect();
+    for (const entry of nodeCardEls) {
+      if (!predicate(entry)) continue;
+      const r = entry.el.getBoundingClientRect();
       minX = Math.min(minX, r.left - containerRect.left);
       minY = Math.min(minY, r.top - containerRect.top);
       maxX = Math.max(maxX, r.right - containerRect.left);
@@ -922,14 +1058,18 @@ function updateZonePositions(): void {
       return;
     }
     zone.style.display = "block";
-    zone.style.left = `${minX - ZONE_PADDING}px`;
-    zone.style.top = `${minY - ZONE_HEADER_SPACE}px`;
-    zone.style.width = `${maxX - minX + ZONE_PADDING * 2}px`;
-    zone.style.height = `${maxY - minY + ZONE_HEADER_SPACE + ZONE_PADDING}px`;
+    zone.style.left = `${minX - pad}px`;
+    zone.style.top = `${minY - topSpace}px`;
+    zone.style.width = `${maxX - minX + pad * 2}px`;
+    zone.style.height = `${maxY - minY + topSpace + pad}px`;
   };
 
-  fit("frontend", frontendZone);
-  fit("backend", backendZone);
+  // outer フロント枠はサブゾーンのヘッダ帯（ZONE_HEADER_SPACE）＋自身のヘッダ帯を内包するため余白2段。
+  fit(frontendZone, (e) => e.side === "frontend", ZONE_HEADER_SPACE * 2, ZONE_PADDING * 2);
+  fit(backendZone, (e) => e.side === "backend", ZONE_HEADER_SPACE, ZONE_PADDING);
+  for (const [dir, sub] of frontendSubZones) {
+    fit(sub, (e) => e.side === "frontend" && e.dir === dir, ZONE_HEADER_SPACE, ZONE_PADDING);
+  }
 }
 
 function renderNodeCards(
@@ -1005,11 +1145,7 @@ function renderNodeCards(
     // 非到達は無変化。線（連携線・ツリーガイド）は svgRenderer 側へ到達集合を渡して太線＋明色で
     // 強調させる（毎tick再描画されるため）。`opacity` でなく `filter` を使い、検索の減光/強調と競合させない。
     card.addEventListener("mouseenter", () => {
-      const reachable = reachableNodeIds(node.id);
-      for (const { el, nodeId: nid } of nodeCardEls) {
-        el.style.filter = reachable.has(nid) ? HOVER_BRIGHTNESS : "";
-      }
-      setHoverReachable(reachable);
+      focusNodeEmphasis(node.id);
     });
 
     card.addEventListener("mouseleave", () => {
@@ -1026,6 +1162,8 @@ function renderNodeCards(
       side: node.side,
       searchText: `${node.label} ${node.sourceLocation?.file ?? ""}`.toLowerCase(),
       functionId: node.functionId,
+      sourceLocation: node.sourceLocation,
+      dir: node.side === "frontend" ? topDir(node.sourceLocation?.file) : undefined,
     });
   }
 
@@ -1093,7 +1231,7 @@ function renderOrphanWarnings(orphans: Warning[]): void {
     const icon = kind === "excluded" ? "■" : kind === "parse" ? "◆" : "○";
     const color = WARNING_KIND_COLOR[kind];
 
-    // 警告チップは視認性のため従来比 1.5 倍のサイズで表示する。
+    // 警告チップは視認性のため従来比 1.5 倍のサイズで表示する。クリックで対象枠へフォーカス。
     const chip = document.createElement("div");
     chip.className = WARNING_OVERLAY_CLASS;
     chip.style.cssText = [
@@ -1105,7 +1243,9 @@ function renderOrphanWarnings(orphans: Warning[]): void {
       "font-size:18px",
       "font-family:ui-monospace,Menlo,monospace",
       "max-width:480px",
+      "cursor:pointer",
     ].join(";");
+    chip.addEventListener("click", () => focusWarningTarget(w));
 
     const l1 = document.createElement("div");
     l1.style.cssText = `color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;`;
@@ -1178,7 +1318,6 @@ function renderGraph(): void {
   const { nodes, edges } = showConnectedOnly
     ? filterConnectedToLinkage(projected.nodes, projected.edges)
     : projected;
-  const frontendCount = nodes.filter((n) => n.side === "frontend").length;
   const backendCount = nodes.filter((n) => n.side === "backend").length;
 
   // 警告マップをレイアウト前に構築（動的行間隔の計算に必要）
@@ -1228,7 +1367,7 @@ function renderGraph(): void {
   applyInitialView();
 
   // ゾーンは cy 生成後に追加してキャンバス上に表示（z-index:2 > canvas:auto）
-  renderBackgroundZones(frontendCount, backendCount);
+  renderBackgroundZones(frontendDirCounts(nodes), backendCount);
 
   // cy.destroy() が graphContainer の全子要素を除去するため、検索ボックスを再マウントして復帰させる
   // （これが無いと再描画後に Ctrl+F で開いてもボックスが DOM から消えていて表示されない）。
@@ -1286,8 +1425,69 @@ window.addEventListener("message", (event: MessageEvent<HostToWebviewMessage>) =
   if (message.type === "linkageData") {
     currentOutput = message.payload;
     renderGraph();
+    return;
+  }
+  if (message.type === "focusNode") {
+    focusNodeByLocation(message.payload.file, message.payload.line);
   }
 });
+
+/**
+ * コード位置（root 相対ファイル＋行）に対応する枠を選び、オンマウス相当に強調＋中央へパンする（逆遷移）。
+ * 同一ファイル内で `location.line <= line` の最大（＝その行を内包する定義）を選ぶ。
+ */
+function focusNodeByLocation(file: string, line: number): void {
+  let best: { nodeId: string; line: number } | undefined;
+  for (const { nodeId, sourceLocation } of nodeCardEls) {
+    if (!sourceLocation || sourceLocation.file !== file) continue;
+    if (sourceLocation.line <= line && (best === undefined || sourceLocation.line > best.line)) {
+      best = { nodeId, line: sourceLocation.line };
+    }
+  }
+  // 行で内包できなければ、同一ファイルの最初の枠にフォールバック。
+  if (!best) {
+    const fallback = nodeCardEls.find(({ sourceLocation }) => sourceLocation?.file === file);
+    if (fallback) best = { nodeId: fallback.nodeId, line: 0 };
+  }
+  if (!best) return;
+  focusNodeEmphasis(best.nodeId);
+  panToNode(best.nodeId);
+}
+
+/** 警告の target に対応する枠を現在のカードから探す（ラベル/searchText 一致 → ファイル一致）。 */
+function findWarningNodeId(target: string): string | undefined {
+  const t = target.toLowerCase();
+  const byLabel = nodeCardEls.find((e) => e.searchText.includes(t));
+  if (byLabel) return byLabel.nodeId;
+  const filePart = t.split(":")[0];
+  const byFile = nodeCardEls.find((e) => (e.sourceLocation?.file ?? "").toLowerCase() === filePart);
+  return byFile?.nodeId;
+}
+
+/**
+ * 「該当ノードのない警告」クリック時、対象枠を探してフォーカス＆強調する。現ビューに無ければ
+ * 「すべて表示」→「ルート連携ビュー」と切替えて再探索する（表示切替てでも探す）。
+ */
+function focusWarningTarget(w: Warning): void {
+  const tryFocus = (): boolean => {
+    const id = findWarningNodeId(w.target);
+    if (!id) return false;
+    focusNodeEmphasis(id);
+    panToNode(id);
+    return true;
+  };
+  if (tryFocus()) return;
+  if (showConnectedOnly) {
+    showConnectedOnly = false;
+    renderGraph();
+    if (tryFocus()) return;
+  }
+  if (currentDepth !== "route") {
+    currentDepth = "route";
+    renderGraph();
+    tryFocus();
+  }
+}
 
 createDepthSwitchControl(
   depthSwitchContainer,

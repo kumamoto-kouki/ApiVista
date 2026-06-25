@@ -140,19 +140,13 @@ function reachableFunctionIds(adj: Map<string, Set<string>>, focalId: string): S
   return visited;
 }
 
-/** Markdown を生成する（`heading` を先頭見出しに、続けて各関数コードを並べる）。 */
-function buildMarkdown(heading: string, snippets: FunctionSnippet[]): string {
-  const lines: string[] = [heading];
-  for (const fn of snippets) {
-    lines.push(
-      "",
-      `## \`${fn.funcName}\` — ${fn.fileRelPath}`,
-      "",
-      `\`\`\`${fn.lang}`,
-      fn.code,
-      "```",
-    );
-  }
+/** Markdown を生成する（先頭タイトル行は付けず、各関数の `## func — file` ＋コードブロックのみ）。 */
+function buildMarkdown(snippets: FunctionSnippet[]): string {
+  const lines: string[] = [];
+  snippets.forEach((fn, i) => {
+    if (i > 0) lines.push("");
+    lines.push(`## \`${fn.funcName}\` — ${fn.fileRelPath}`, "", `\`\`\`${fn.lang}`, fn.code, "```");
+  });
   return lines.join("\n");
 }
 
@@ -205,10 +199,7 @@ export async function copyLinkedChain(
 
   if (snippets.length === 0) return 0;
 
-  const focalName = byId.get(focalFunctionId)?.name ?? snippets[0].funcName;
-  await vscode.env.clipboard.writeText(
-    buildMarkdown(`# ApiVista: 連携関数コピー — \`${focalName}\``, snippets),
-  );
+  await vscode.env.clipboard.writeText(buildMarkdown(snippets));
   return snippets.length;
 }
 
@@ -260,6 +251,6 @@ export async function copySelectedFunctions(
 
   if (snippets.length === 0) return 0;
 
-  await vscode.env.clipboard.writeText(buildMarkdown("# ApiVista: 選択枠コピー", snippets));
+  await vscode.env.clipboard.writeText(buildMarkdown(snippets));
   return snippets.length;
 }

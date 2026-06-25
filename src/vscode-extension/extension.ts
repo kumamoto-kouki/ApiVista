@@ -32,6 +32,8 @@
  * - `deactivate`は拡張終了時の安全網として、最後にアクティブだったwatcherが残っていれば`dispose()`する
  *   (パネルが開いたままVSCodeが終了する場合に備える。通常はパネルの`onDidDispose`で先に破棄される)。
  */
+import { relative, sep } from "node:path";
+
 import * as vscode from "vscode";
 
 import { analyze, AnalysisError } from "./analysisOrchestrator.js";
@@ -225,6 +227,46 @@ async function runAnalyzeActiveFile(
   openPanelAndStartWatcher(context, result.output, result.backendRoot, result.frontendRoot);
 }
 
+/** 絶対パスが `root` 配下なら root 相対 POSIX パスを返す（配下でなければ null）。 */
+function toRootRelative(absPath: string, root: string): string | null {
+  const rel = relative(root, absPath);
+  if (rel.startsWith("..") || rel.startsWith(`..${sep}`) || rel === "") return null;
+  return sep === "/" ? rel : rel.split(sep).join("/");
+}
+
+/** コードエディタから ApiVista の対応枠へフォーカス（逆遷移）。グラフを開き、対象枠を強調＆中央へ。 */
+async function runRevealInGraph(
+  context: vscode.ExtensionContext,
+  wasmDir: string,
+  uri?: vscode.Uri,
+): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  const fsPath = uri?.fsPath ?? editor?.document.uri.fsPath;
+  if (!fsPath) return;
+  const line =
+    (editor && editor.document.uri.fsPath === fsPath ? editor.selection.active.line : 0) + 1;
+
+  let scanned: { backendRoot: string; frontendRoot: string };
+  try {
+    scanned = validate();
+  } catch (error) {
+    reportError(error);
+    return;
+  }
+  const rel =
+    toRootRelative(fsPath, scanned.backendRoot) ?? toRootRelative(fsPath, scanned.frontendRoot);
+  if (rel === null) {
+    void vscode.window.showInformationMessage(
+      "ApiVista: 対象ファイルは backend/ または frontend/ 配下ではありません。",
+    );
+    return;
+  }
+
+  // グラフを開く/前面化（キャッシュがあれば即時）。新規生成時の取りこぼしは postFocusNode が ready で流す。
+  await runShowGraph(context, wasmDir);
+  graphPanel.postFocusNode({ file: rel, line });
+}
+
 /** 枠の右クリック（webview）から、連結する全関数を Markdown コピーする。 */
 async function runCopyLinkedChain(
   output: Awaited<ReturnType<typeof analyze>>,
@@ -271,6 +313,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("apivista.reanalyze", () => runReanalyze(wasmDir, storageDir)),
     vscode.commands.registerCommand("apivista.analyzeActiveFile", (uri?: vscode.Uri) =>
       runAnalyzeActiveFile(context, wasmDir, storageDir, uri),
+    ),
+    vscode.commands.registerCommand("apivista.revealInGraph", (uri?: vscode.Uri) =>
+      runRevealInGraph(context, wasmDir, uri),
     ),
   );
 }

@@ -260,9 +260,45 @@ describe("webview/main.ts", () => {
     dispatchLinkageData(buildOutput({}));
 
     const options = cytoscapeMock.mock.calls[0][0] as { minZoom?: number; maxZoom?: number };
-    expect(options.maxZoom).toBe(1);
+    // 原寸の 130% まで拡大を許容する（#1）。
+    expect(options.maxZoom).toBe(1.3);
     expect(options.minZoom).toBeGreaterThan(0);
     expect(options.minZoom).toBeLessThan(1);
+  });
+
+  it("renders a separate frontend sub-zone per source directory (#2)", async () => {
+    await import("../main.js");
+
+    // 連携あり（= connected-only でも表示される）の apiCall を異なるディレクトリに 2 件作る。
+    dispatchLinkageData(
+      buildOutput({
+        linkages: [
+          {
+            route: route({ entryFunctionId: "backend:fn-a" }),
+            apiCall: apiCall({
+              enclosingFunctionId: "frontend:fn-a",
+              location: { file: "components/UserCard.vue", line: 3 },
+            }),
+            matchKind: "exact",
+          },
+          {
+            route: route({ path: "/api/items", entryFunctionId: "backend:fn-b" }),
+            apiCall: apiCall({
+              urlPattern: "/api/items",
+              enclosingFunctionId: "frontend:fn-b",
+              location: { file: "composables/useItems.ts", line: 7 },
+            }),
+            matchKind: "exact",
+          },
+        ],
+      }),
+    );
+
+    // ディレクトリごとにサブゾーン枠（data-zone-dir）が生成される。
+    expect(document.querySelector('[data-zone-dir="components"]')).not.toBeNull();
+    expect(document.querySelector('[data-zone-dir="composables"]')).not.toBeNull();
+    // 未知ディレクトリ（other）のサブゾーンは生成されない。
+    expect(document.querySelector('[data-zone-dir="other"]')).toBeNull();
   });
 
   it("caps the orphan-warning list height with scroll so it doesn't take over the screen (#4)", async () => {

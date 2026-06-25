@@ -25,12 +25,21 @@
       {
         "command": "apivista.analyzeActiveFile",
         "title": "ApiVista: このファイルのルートを解析"
+      },
+      {
+        "command": "apivista.revealInGraph",
+        "title": "ApiVista: この位置の枠をグラフで表示"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "apivista.analyzeActiveFile",
+          "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
+          "group": "apivista@1"
+        },
+        {
+          "command": "apivista.revealInGraph",
           "when": "resourceExtname == '.py' || resourceExtname == '.ts' || resourceExtname == '.js' || resourceExtname == '.vue'",
           "group": "apivista@1"
         }

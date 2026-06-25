@@ -202,27 +202,31 @@ describe("extension.activate", () => {
     vi.resetModules();
   });
 
-  it("3コマンド（showGraph/reanalyze/analyzeActiveFile）を登録し、すべてのdisposableをcontext.subscriptionsへpushする", async () => {
+  it("4コマンド（showGraph/reanalyze/analyzeActiveFile/revealInGraph）を登録し、すべてのdisposableをcontext.subscriptionsへpushする", async () => {
     const disposableShowGraph = { dispose: vi.fn() };
     const disposableReanalyze = { dispose: vi.fn() };
     const disposableAnalyzeActiveFile = { dispose: vi.fn() };
+    const disposableRevealInGraph = { dispose: vi.fn() };
     registerCommandMock
       .mockReturnValueOnce(disposableShowGraph)
       .mockReturnValueOnce(disposableReanalyze)
-      .mockReturnValueOnce(disposableAnalyzeActiveFile);
+      .mockReturnValueOnce(disposableAnalyzeActiveFile)
+      .mockReturnValueOnce(disposableRevealInGraph);
 
     const { activate } = await import("../extension.js");
     const context = makeFakeContext();
 
     activate(context as never);
 
-    expect(registerCommandMock).toHaveBeenCalledTimes(3);
+    expect(registerCommandMock).toHaveBeenCalledTimes(4);
     expect(registerCommandMock.mock.calls[0][0]).toBe("apivista.showGraph");
     expect(registerCommandMock.mock.calls[1][0]).toBe("apivista.reanalyze");
     expect(registerCommandMock.mock.calls[2][0]).toBe("apivista.analyzeActiveFile");
+    expect(registerCommandMock.mock.calls[3][0]).toBe("apivista.revealInGraph");
     expect(context.subscriptions).toContain(disposableShowGraph);
     expect(context.subscriptions).toContain(disposableReanalyze);
     expect(context.subscriptions).toContain(disposableAnalyzeActiveFile);
+    expect(context.subscriptions).toContain(disposableRevealInGraph);
   });
 
   it("showGraph実行時、validate→analyze→showOrRevealの順に呼び出し、validateが返したrootsをanalyzeに渡す", async () => {

@@ -37,6 +37,9 @@ let currentPanel: vscode.WebviewPanel | undefined;
  */
 let latestOutput: LinkageOutput | undefined;
 
+/** 新規パネル生成直後に流す保留フォーカス（revealInGraph 用、ready で消費）。 */
+let pendingFocus: { file: string; line: number } | undefined;
+
 /** `copyLinked` メッセージを処理するためにホスト側（extension.ts）が注入するコールバック。 */
 export type CopyLinkedHandler = (output: LinkageOutput, payload: { functionId: string }) => void;
 
@@ -79,6 +82,11 @@ function createPanel(
   panel.webview.onDidReceiveMessage((message: WebviewToHostMessage) => {
     if (message.type === "ready") {
       panel.webview.postMessage({ type: "linkageData", payload: initialOutput });
+      // 新規パネル生成直後の revealInGraph 用: 保留フォーカスがあればデータ送信後に流す。
+      if (pendingFocus) {
+        panel.webview.postMessage({ type: "focusNode", payload: pendingFocus });
+        pendingFocus = undefined;
+      }
       return;
     }
     if (message.type === "nodeClick") {
@@ -107,6 +115,7 @@ function createPanel(
     if (currentPanel === panel) {
       currentPanel = undefined;
       latestOutput = undefined;
+      pendingFocus = undefined;
     }
     onDidDispose?.();
   });
@@ -156,4 +165,14 @@ export function postLinkageUpdate(output: LinkageOutput): void {
   }
   latestOutput = output;
   currentPanel.webview.postMessage({ type: "linkageData", payload: output });
+}
+
+/**
+ * コード位置（root 相対ファイル＋行）を現在パネルへ送り、対応する枠をフォーカスさせる（逆遷移）。
+ * 既存パネルへは即時送信。新規生成直後（webview 未 ready）の取りこぼしに備え `pendingFocus` にも保持し、
+ * `ready` 受信時に流す（ready は dispose まで再発火しないため二重発火はしない）。
+ */
+export function postFocusNode(payload: { file: string; line: number }): void {
+  pendingFocus = payload;
+  currentPanel?.webview.postMessage({ type: "focusNode", payload });
 }

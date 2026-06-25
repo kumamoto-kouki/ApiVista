@@ -157,8 +157,9 @@ describe("copyLinkedChain", () => {
     for (const name of ["index", "fetchPosts", "fetchUser", "getPosts", "queryPosts"]) {
       expect(md).toContain(`\`${name}\``);
     }
-    // 見出しは起点関数名
-    expect(md).toContain("連携関数コピー — `index`");
+    // 先頭タイトル行（# ApiVista …）は付けない（#7）。各関数の `## func — file` 見出しのみ。
+    expect(md).not.toContain("# ApiVista");
+    expect(md).toMatch(/^## `index` — /m);
   });
 
   it("呼ばれる側（バック末端）を起点にしても連結成分の全関数を取得する", async () => {
@@ -282,7 +283,9 @@ describe("copySelectedFunctions", () => {
     expect(count).toBe(2);
 
     const md = clipboardWriteMock.mock.calls[0][0] as string;
-    expect(md).toContain("# ApiVista: 選択枠コピー");
+    // 先頭タイトル行（# ApiVista …）は付けない（#7）。各関数の `## func` 見出しのみ。
+    expect(md).not.toContain("# ApiVista");
+    expect(md).toContain("## `a`");
     expect(md).toContain("code:a");
     expect(md).toContain("code:c");
     expect(md).not.toContain("code:b"); // 連鎖で b を含めない
