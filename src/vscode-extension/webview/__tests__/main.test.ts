@@ -301,6 +301,49 @@ describe("webview/main.ts", () => {
     expect(document.querySelector('[data-zone-dir="other"]')).toBeNull();
   });
 
+  it("focusNode メッセージで対象枠を選択リングで目立たせる（コード→グラフ逆遷移, #1）", async () => {
+    await import("../main.js");
+    dispatchLinkageData(
+      buildOutput({
+        linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }],
+      }),
+    );
+
+    // 初期描画時はどのカードにも選択リング（boxShadow）が付いていない。
+    const cardsBefore = [...document.querySelectorAll<HTMLElement>(".node-card")];
+    expect(cardsBefore.length).toBeGreaterThan(0);
+    expect(cardsBefore.every((c) => c.style.boxShadow === "")).toBe(true);
+
+    // apiCall ノードのソース位置（frontend/api/users.ts:5）を内包する行で逆遷移。
+    const focus: HostToWebviewMessage = {
+      type: "focusNode",
+      payload: { file: "frontend/api/users.ts", line: 5 },
+    };
+    window.dispatchEvent(new MessageEvent("message", { data: focus }));
+
+    // 対象枠に選択リング（boxShadow）が 1 枚だけ付く。
+    const ringed = [...document.querySelectorAll<HTMLElement>(".node-card")].filter(
+      (c) => c.style.boxShadow !== "",
+    );
+    expect(ringed.length).toBe(1);
+  });
+
+  it("付与する: 省略され得るラベル/パスにツールチップ(title)で全文を持たせる (#2)", async () => {
+    await import("../main.js");
+    dispatchLinkageData(
+      buildOutput({
+        linkages: [{ route: route(), apiCall: apiCall(), matchKind: "exact" }],
+      }),
+    );
+
+    const titles = [...document.querySelectorAll<HTMLElement>(".node-card [title]")].map(
+      (el) => el.title,
+    );
+    // ラベル全文（route ラベル）とソースパス全文がツールチップとして付く。
+    expect(titles).toContain("GET /api/users/{id}");
+    expect(titles.some((t) => t.includes("frontend/api/users.ts:5"))).toBe(true);
+  });
+
   it("caps the orphan-warning list height with scroll so it doesn't take over the screen (#4)", async () => {
     await import("../main.js");
     // どのノードにも紐付かない警告 → 孤立警告セクションに表示される

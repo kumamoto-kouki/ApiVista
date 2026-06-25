@@ -68,6 +68,8 @@ export function createNodeCard(
 
   const typeName = document.createElement("span");
   typeName.textContent = NODE_LABELS[node.kind as NodeKind] ?? node.kind;
+  // 省略（…）されても全文をネイティブツールチップで読めるようにする。
+  typeName.title = typeName.textContent;
   typeName.style.cssText = `font-size:10px;color:${theme.textSub};flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
 
   const connBadge = document.createElement("span");
@@ -95,6 +97,8 @@ export function createNodeCard(
   ].join(";");
   const labelText = document.createElement("span");
   labelText.textContent = node.label;
+  // 長いラベルが「…」省略されてもオンマウスで全文を表示する（ツールチップ）。
+  labelText.title = node.label;
   if (isJumpable) {
     labelText.dataset.codeLink = "true";
     labelText.style.cursor = "pointer";
@@ -120,6 +124,8 @@ export function createNodeCard(
     // 当たり判定は文字だけ: テキストをインライン span に入れて data-code-link を付ける。
     const sourceText = document.createElement("span");
     sourceText.textContent = `↗ ${node.sourceLocation.file}:${node.sourceLocation.line}`;
+    // 長いパスが省略されてもオンマウスで全文（パス:行）を表示する。
+    sourceText.title = `${node.sourceLocation.file}:${node.sourceLocation.line}`;
     sourceText.dataset.codeLink = "true";
     sourceText.style.cursor = "pointer";
     source.appendChild(sourceText);
@@ -142,10 +148,12 @@ export function createNodeCard(
       const line1 = document.createElement("div");
       line1.style.cssText = `font-size:10px;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;`;
       line1.textContent = `${icon} ${w.target}`;
+      line1.title = w.target;
 
       const line2 = document.createElement("div");
       line2.style.cssText = `font-size:9px;color:${theme.textSub};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;`;
       line2.textContent = translateReason(w.reason);
+      line2.title = line2.textContent;
 
       item.appendChild(line1);
       item.appendChild(line2);

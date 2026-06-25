@@ -1450,6 +1450,10 @@ function focusNodeByLocation(file: string, line: number): void {
     if (fallback) best = { nodeId: fallback.nodeId, line: 0 };
   }
   if (!best) return;
+  // 対象枠を明確に目立たせる: カーソルフォーカス相当の選択リング＋オンマウス相当の明度強調＋中央へパン。
+  selectionMultiMode = false;
+  selectedNodeIds = new Set([best.nodeId]);
+  applySelectionHighlight();
   focusNodeEmphasis(best.nodeId);
   panToNode(best.nodeId);
 }
