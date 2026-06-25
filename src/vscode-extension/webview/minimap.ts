@@ -11,6 +11,7 @@
 import type { Core } from "cytoscape";
 
 import type { GraphNode } from "./projectDepth.js";
+import { registerFrameUpdater, unregisterFrameUpdater } from "./renderScheduler.js";
 import { buildTheme } from "./themeManager.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -27,10 +28,11 @@ const MINI_PADDING = 8;
 let minimapEl: HTMLElement | null = null;
 let minimapUpdateFn: (() => void) | null = null;
 
-/** ミニマップを除去し、登録した cy リスナーも解除する。 */
+/** ミニマップを除去し、登録した更新関数も解除する。描画イベント購読は renderScheduler が一元管理する。 */
 export function clearMinimap(cy?: Core): void {
+  void cy;
   if (minimapUpdateFn) {
-    cy?.off("render pan zoom resize", minimapUpdateFn);
+    unregisterFrameUpdater(minimapUpdateFn);
     minimapUpdateFn = null;
   }
   minimapEl?.remove();
@@ -128,7 +130,7 @@ export function renderMinimap(cy: Core, graphContainer: HTMLElement, nodes: Grap
   };
   updateViewport();
   minimapUpdateFn = updateViewport;
-  cy.on("render pan zoom resize", updateViewport);
+  registerFrameUpdater(updateViewport);
 
   // クリック: クリック点（ミニマップ座標）をモデル座標へ逆変換し、その点が画面中央に来るようパン。
   container.addEventListener("click", (e) => {

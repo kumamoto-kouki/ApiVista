@@ -2,6 +2,7 @@ import type { Core } from "cytoscape";
 
 import type { Warning } from "../../route-linkage/models.js";
 import type { GraphEdge, GraphNode } from "./projectDepth.js";
+import { registerFrameUpdater, unregisterFrameUpdater } from "./renderScheduler.js";
 import { buildTheme } from "./themeManager.js";
 
 const NODE_CARD_W = 200;
@@ -42,8 +43,9 @@ export function setHoverReachable(set: Set<string> | null): void {
 }
 
 export function clearTreeGuides(cy?: Core): void {
+  void cy; // 描画イベント購読は renderScheduler が一元管理するため cy.off は不要。
   if (treeGuideUpdateFn) {
-    cy?.off("render pan zoom resize", treeGuideUpdateFn);
+    unregisterFrameUpdater(treeGuideUpdateFn);
     treeGuideUpdateFn = null;
   }
   treeGuideSvg?.remove();
@@ -52,16 +54,22 @@ export function clearTreeGuides(cy?: Core): void {
 }
 
 export function clearLinkageLines(): void {
+  if (linkageUpdateFn) {
+    unregisterFrameUpdater(linkageUpdateFn);
+    linkageUpdateFn = null;
+  }
   linkageSvg?.remove();
   linkageSvg = null;
-  linkageUpdateFn = null;
   hoverReachable = null;
 }
 
 export function clearDependencyLines(): void {
+  if (depLineUpdateFn) {
+    unregisterFrameUpdater(depLineUpdateFn);
+    depLineUpdateFn = null;
+  }
   depLineSvg?.remove();
   depLineSvg = null;
-  depLineUpdateFn = null;
   hoverReachable = null;
 }
 
@@ -97,73 +105,91 @@ export function renderTreeGuides(
   graphContainer.appendChild(svg);
   treeGuideSvg = svg;
 
+  // (親→子)ペアを平坦化し、path/arrow を**事前生成**する（毎tickは d/stroke のみ更新し、DOM 再生成しない）。
+  type NodeKind = "route" | "apiCall" | "file" | "function";
+  type Pair = {
+    parentId: string;
+    childId: string;
+    color: string;
+    curve: SVGPathElement;
+    arrow: SVGPathElement;
+  };
+  const nodeRefs = new Map<string, ReturnType<Core["getElementById"]>>();
+  const getRef = (id: string): ReturnType<Core["getElementById"]> => {
+    let r = nodeRefs.get(id);
+    if (!r) {
+      r = cy.getElementById(id);
+      nodeRefs.set(id, r);
+    }
+    return r;
+  };
+
+  const pairs: Pair[] = [];
+  for (const [parentId, childIds] of childrenMap) {
+    for (const childId of childIds) {
+      const childNode = byId.get(childId);
+      const color = childNode
+        ? ((theme[childNode.kind as NodeKind] as string | undefined) ?? theme.edge)
+        : theme.edge;
+      const curve = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      curve.setAttribute("fill", "none");
+      curve.setAttribute("opacity", "1");
+      svg.appendChild(curve);
+      const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      arrow.setAttribute("opacity", "1");
+      svg.appendChild(arrow);
+      pairs.push({ parentId, childId, color, curve, arrow });
+    }
+  }
+
   const updateFn = (): void => {
     const zoom = cy.zoom();
     const pan = cy.pan();
 
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    for (const { parentId, childId, color, curve, arrow } of pairs) {
+      const p = getRef(parentId);
+      const c = getRef(childId);
+      if (!p.length || !c.length) {
+        curve.style.display = "none";
+        arrow.style.display = "none";
+        continue;
+      }
 
-    for (const [parentId, childIds] of childrenMap) {
-      const pCyNode = cy.getElementById(parentId);
-      if (!pCyNode.length) continue;
-
-      const pp = pCyNode.position();
+      const pp = p.position();
       const pDepth = depths.get(parentId) ?? 0;
       const pVisualCenterX = pp.x * zoom + pan.x + pDepth * INDENT_X * zoom;
       const pWarnCount = (warningsByNode.get(parentId) ?? []).length;
       const pBottomY = pp.y * zoom + pan.y + (NODE_CARD_H / 2 + pWarnCount * WARNING_ITEM_H) * zoom;
       const guideX = pVisualCenterX - (NODE_CARD_W / 2) * zoom + 14 * zoom;
 
-      const childData: { id: string; y: number; x: number; color: string }[] = [];
-      for (const cid of childIds) {
-        const cCyNode = cy.getElementById(cid);
-        if (!cCyNode.length) continue;
-        const cp = cCyNode.position();
-        const cCenterY = cp.y * zoom + pan.y;
-        const cDepth = depths.get(cid) ?? 0;
-        const cVisualCenterX = cp.x * zoom + pan.x + cDepth * INDENT_X * zoom;
-        const childNode = byId.get(cid);
-        type NodeKind = "route" | "apiCall" | "file" | "function";
-        const color = childNode
-          ? ((theme[childNode.kind as NodeKind] as string | undefined) ?? theme.edge)
-          : theme.edge;
-        childData.push({ id: cid, y: cCenterY, x: cVisualCenterX, color });
-      }
-      if (childData.length === 0) continue;
+      const cp = c.position();
+      const childCenterY = cp.y * zoom + pan.y;
+      const cDepth = depths.get(childId) ?? 0;
+      const cVisualCenterX = cp.x * zoom + pan.x + cDepth * INDENT_X * zoom;
+      const arrowTip = cVisualCenterX - (NODE_CARD_W / 2) * zoom;
 
-      for (const { id: childId, y: childCenterY, x: cVisualCenterX, color } of childData) {
-        const childCardLeft = cVisualCenterX - (NODE_CARD_W / 2) * zoom;
-        const arrowTip = childCardLeft;
-        // 到達集合内の線は太線＋明色で強調。非強調は既定（言語色・1.5・減光なし）。
-        const emphasized = isLineEmphasized(parentId, childId);
-        const lineColor = emphasized ? theme.edgeHi : color;
-        const lineWidth = emphasized ? "3" : "1.5";
+      // 到達集合内の線は太線＋明色で強調。非強調は既定（言語色・1.5・減光なし）。
+      const emphasized = isLineEmphasized(parentId, childId);
+      const lineColor = emphasized ? theme.edgeHi : color;
 
-        const curvePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        curvePath.setAttribute(
-          "d",
-          `M${guideX},${pBottomY} C${guideX},${childCenterY} ${guideX},${childCenterY} ${arrowTip - 8},${childCenterY}`,
-        );
-        curvePath.setAttribute("stroke", lineColor);
-        curvePath.setAttribute("stroke-width", lineWidth);
-        curvePath.setAttribute("fill", "none");
-        curvePath.setAttribute("opacity", "1");
-        svg.appendChild(curvePath);
-
-        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        arrow.setAttribute(
-          "d",
-          `M${arrowTip - 8},${childCenterY - 4.5} L${arrowTip},${childCenterY} L${arrowTip - 8},${childCenterY + 4.5} Z`,
-        );
-        arrow.setAttribute("fill", lineColor);
-        arrow.setAttribute("opacity", "1");
-        svg.appendChild(arrow);
-      }
+      curve.style.display = "";
+      arrow.style.display = "";
+      curve.setAttribute(
+        "d",
+        `M${guideX},${pBottomY} C${guideX},${childCenterY} ${guideX},${childCenterY} ${arrowTip - 8},${childCenterY}`,
+      );
+      curve.setAttribute("stroke", lineColor);
+      curve.setAttribute("stroke-width", emphasized ? "3" : "1.5");
+      arrow.setAttribute(
+        "d",
+        `M${arrowTip - 8},${childCenterY - 4.5} L${arrowTip},${childCenterY} L${arrowTip - 8},${childCenterY + 4.5} Z`,
+      );
+      arrow.setAttribute("fill", lineColor);
     }
   };
 
   treeGuideUpdateFn = updateFn;
-  cy.on("render pan zoom resize", updateFn);
+  registerFrameUpdater(updateFn);
   updateFn();
 }
 
@@ -260,7 +286,7 @@ export function renderLinkageLines(
   };
 
   linkageUpdateFn = updateFn;
-  cy.on("render pan zoom resize", updateFn);
+  registerFrameUpdater(updateFn);
   updateFn();
 }
 
@@ -375,6 +401,6 @@ export function renderDependencyLines(
   };
 
   depLineUpdateFn = updateFn;
-  cy.on("render pan zoom resize", updateFn);
+  registerFrameUpdater(updateFn);
   updateFn();
 }

@@ -11,7 +11,12 @@
  * - 警告: 対応ノード直下のHTMLオーバーレイ（kindに応じた色インジケータ）。孤立警告は底部に固定表示。
  * - インタラクション: hover減光（.dim＋カード不透明度）、空きエリアclick解除。
  */
-import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from "cytoscape";
+import cytoscape, {
+  type Core,
+  type ElementDefinition,
+  type NodeSingular,
+  type StylesheetJson,
+} from "cytoscape";
 
 import { createCardContextMenu } from "./cardContextMenu.js";
 import { createDepthSwitchControl } from "./depthSwitchControl.js";
@@ -30,6 +35,12 @@ import {
   setHoverReachable,
 } from "./svgRenderer.js";
 import { clearMinimap, renderMinimap } from "./minimap.js";
+import {
+  attachRenderScheduler,
+  detachRenderScheduler,
+  registerFrameUpdater,
+  unregisterFrameUpdater,
+} from "./renderScheduler.js";
 import { buildTheme } from "./themeManager.js";
 import {
   inferWarningKind,
@@ -835,6 +846,13 @@ type NodeCardEntry = {
   sourceLocation?: { file: string; line: number };
   /** フロントのディレクトリ別サブゾーン分類（frontend のみ。backend は undefined）。 */
   dir?: string;
+  /** 毎tick描画の高速化用キャッシュ（renderNodeCards でカード生成時に1回だけ格納する）。 */
+  /** 対応する Cytoscape ノード参照（毎tickの getElementById を避ける）。 */
+  cyNode: NodeSingular;
+  /** structural 深度（毎tickの dataset 文字列パースを避ける）。 */
+  depthVal: number;
+  /** 警告件数（ゾーン高さの解析的算出に使う）。 */
+  warnCount: number;
 };
 let nodeCardEls: NodeCardEntry[] = [];
 let nodeCardUpdateFn: (() => void) | null = null;
@@ -984,7 +1002,7 @@ function reachableNodeIds(startId: string): Set<string> {
 
 function clearNodeCards(): void {
   if (nodeCardUpdateFn) {
-    cy?.off("render pan zoom resize", nodeCardUpdateFn);
+    unregisterFrameUpdater(nodeCardUpdateFn);
     nodeCardUpdateFn = null;
   }
   for (const { el } of nodeCardEls) el.remove();
@@ -1002,17 +1020,15 @@ function updateNodeCardPositions(): void {
   if (!cy) return;
   const zoom = cy.zoom();
   const pan = cy.pan();
+  const hw = NODE_CARD_W / 2;
+  const hh = NODE_CARD_H / 2;
 
-  for (const { el, nodeId } of nodeCardEls) {
-    const cyNode = cy.getElementById(nodeId);
+  for (const { el, cyNode, depthVal } of nodeCardEls) {
     if (!cyNode.length) continue;
     const pos = cyNode.position();
     const screenX = pos.x * zoom + pan.x;
     const screenY = pos.y * zoom + pan.y;
-    const hw = NODE_CARD_W / 2;
-    const hh = NODE_CARD_H / 2;
-    const depth = Number(el.dataset.depth ?? "0");
-    const extraX = depth * INDENT_X * zoom;
+    const extraX = depthVal * INDENT_X * zoom;
     el.style.transform = `translate(${screenX - hw * zoom + extraX}px, ${screenY - hh * zoom}px) scale(${zoom})`;
   }
 
@@ -1025,11 +1041,18 @@ const ZONE_PADDING = 14;
 const ZONE_HEADER_SPACE = 30;
 
 /**
- * フロント/バック背景ゾーンを、実際のカード画面位置から算出した矩形に合わせる。
- * 固定 50% ではなく実コンテンツ基準にすることで、カードが必ずゾーン内に収まる。
+ * フロント/バック背景ゾーンを、カードの画面矩形に合わせる。
+ *
+ * 矩形は `getBoundingClientRect()`（毎tickの強制リフローを誘発）ではなく、キャッシュした Cytoscape 位置・
+ * zoom・pan・depth・警告件数から**解析的に算出**する（`updateNodeCardPositions` の transform と同一式）。
+ * これによりパン/ズーム中の read-after-write レイアウトスラッシングを排除する。
  */
 function updateZonePositions(): void {
-  const containerRect = graphContainer.getBoundingClientRect();
+  if (!cy) return;
+  const zoom = cy.zoom();
+  const pan = cy.pan();
+  const hw = NODE_CARD_W / 2;
+  const hh = NODE_CARD_H / 2;
 
   /**
    * `predicate` に一致するカードの画面 bbox に `zone` を合わせる。`topSpace`/`pad` でヘッダ余白・外周余白を調整。
@@ -1048,12 +1071,17 @@ function updateZonePositions(): void {
     let maxY = -Infinity;
     let count = 0;
     for (const entry of nodeCardEls) {
-      if (!predicate(entry)) continue;
-      const r = entry.el.getBoundingClientRect();
-      minX = Math.min(minX, r.left - containerRect.left);
-      minY = Math.min(minY, r.top - containerRect.top);
-      maxX = Math.max(maxX, r.right - containerRect.left);
-      maxY = Math.max(maxY, r.bottom - containerRect.top);
+      if (!predicate(entry) || !entry.cyNode.length) continue;
+      const pos = entry.cyNode.position();
+      // カードの画面矩形（コンテナ相対）。transform の translate/scale と同じ計算。
+      const left = pos.x * zoom + pan.x - hw * zoom + entry.depthVal * INDENT_X * zoom;
+      const top = pos.y * zoom + pan.y - hh * zoom;
+      const right = left + NODE_CARD_W * zoom;
+      const bottom = top + (NODE_CARD_H + entry.warnCount * WARNING_ITEM_H) * zoom;
+      minX = Math.min(minX, left);
+      minY = Math.min(minY, top);
+      maxX = Math.max(maxX, right);
+      maxY = Math.max(maxY, bottom);
       count++;
     }
     if (count === 0) {
@@ -1167,12 +1195,16 @@ function renderNodeCards(
       functionId: node.functionId,
       sourceLocation: node.sourceLocation,
       dir: node.side === "frontend" ? topDir(node.sourceLocation?.file) : undefined,
+      // 毎tickの getElementById / dataset パースを避けるため、生成時に1回だけキャッシュする。
+      cyNode: cy.getElementById(node.id),
+      depthVal: depths.get(node.id) ?? 0,
+      warnCount: warnings.length,
     });
   }
 
   const updateFn = () => updateNodeCardPositions();
   nodeCardUpdateFn = updateFn;
-  cy.on("render pan zoom resize", updateFn);
+  registerFrameUpdater(updateFn);
   updateNodeCardPositions();
 }
 
@@ -1341,6 +1373,8 @@ function renderGraph(): void {
   const { positions, depths, primaryParentOf } = computeLayout(nodes, edges, warningsByNode);
   const elements = toElementDefinitions(nodes, edges, positions);
 
+  // 旧 cy のスケジューラを切り離し（保留 rAF をキャンセル・updater をクリア）てから破棄する。
+  detachRenderScheduler(cy);
   cy?.destroy();
   cy = cytoscape({
     container: graphContainer,
@@ -1365,6 +1399,9 @@ function renderGraph(): void {
     autoungrabify: true,
     boxSelectionEnabled: false,
   });
+
+  // 新 cy の描画イベントをスケジューラへ接続（カード/線/ミニマップの毎tick更新を rAF で一括実行）。
+  attachRenderScheduler(cy);
 
   // 初期表示を原寸(zoom=1)・コンテンツ最上部に固定する（枠の数に依らずトップから原寸で見せる）。
   applyInitialView();
